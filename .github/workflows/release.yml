@@ -1,0 +1,164 @@
+name: Release
+
+# Build Windows + macOS binaries and attach them to a GitHub Release.
+# Trigger: push a version tag (v0.1.1) or run manually from the Actions tab.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create/update (e.g. v0.1.1). Leave empty when pushing a tag."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: plaintext-windows-x64
+            binary: plaintext.exe
+          - os: macos-14
+            artifact: plaintext-macos-arm64
+            binary: plaintext
+          - os: macos-13
+            artifact: plaintext-macos-x64
+            binary: plaintext
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Windows LLVM (bindgen)
+        if: runner.os == 'Windows'
+        run: choco install llvm -y
+
+      - name: Build release
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
+          fi
+          cargo build --release
+
+      - name: Stage package
+        shell: bash
+        run: |
+          STAGE="dist/${{ matrix.artifact }}"
+          mkdir -p "$STAGE/docs" "$STAGE/examples" "$STAGE/scripts" "$STAGE/assets"
+          cp "target/release/${{ matrix.binary }}" "$STAGE/"
+          cp GETTING-STARTED.md README.md "$STAGE/"
+          cp -R docs/. "$STAGE/docs/"
+          cp -R examples/. "$STAGE/examples/"
+          cp scripts/install-pt-icon.ps1 "$STAGE/scripts/" 2>/dev/null || true
+          cp assets/pt.ico assets/pt-logo.png "$STAGE/assets/" 2>/dev/null || true
+          {
+            echo "PlainText - ${{ matrix.artifact }}"
+            echo ""
+            echo "1. Add this folder to your PATH (or run ./${{ matrix.binary }} from here)."
+            echo "2. Try:  plaintext run examples/basics.pt"
+            echo "3. Read GETTING-STARTED.md and docs/language-reference.md"
+            echo ""
+            echo "https://github.com/Granite900/PlainText"
+            if [ "${{ runner.os }}" = "macOS" ]; then
+              echo ""
+              echo "macOS note: if macOS blocks the binary, right-click it -> Open once,"
+              echo "or run:  xattr -dr com.apple.quarantine plaintext"
+              chmod +x "$STAGE/${{ matrix.binary }}"
+            fi
+          } > "$STAGE/START-HERE.txt"
+
+      - name: Package VS Code extension (once, on Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          npm install -g @vscode/vsce
+          cd editors/vscode
+          # Avoid broken relative README links during packaging
+          cp README.md README.md.bak
+          sed 's|\[PlainText\](../../README.md)|PlainText|g' README.md.bak > README.md
+          vsce package --allow-missing-repository
+          mv README.md.bak README.md
+          cp plaintext-lang-*.vsix "../../dist/${{ matrix.artifact }}/plaintext-lang.vsix"
+
+      - name: Zip artifact
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a -tzip "${{ matrix.artifact }}.zip" "${{ matrix.artifact }}"
+          else
+            zip -r "${{ matrix.artifact }}.zip" "${{ matrix.artifact }}"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect zip files
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          find artifacts -name '*.zip' -exec cp {} release-assets/ \;
+          ls -la release-assets
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
+          name: PlainText ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: release-assets/*.zip
+          body: |
+            ## Install
+
+            Download the zip for your machine:
+
+            | Platform | File |
+            |----------|------|
+            | Windows x64 | `plaintext-windows-x64.zip` |
+            | macOS Apple Silicon (M1/M2/M3) | `plaintext-macos-arm64.zip` |
+            | macOS Intel | `plaintext-macos-x64.zip` |
+
+            Unzip, add the folder to your `PATH`, then:
+
+            ```bash
+            plaintext run examples/basics.pt
+            ```
+
+            See **GETTING-STARTED.md** inside the zip.
+
+            ### macOS Gatekeeper
+            If macOS refuses to run the binary the first time:
+
+            ```bash
+            xattr -dr com.apple.quarantine plaintext
+            ```
+
+            Or right-click the file → **Open**.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

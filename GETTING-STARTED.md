@@ -8,52 +8,66 @@ language itself.
 ### Option A — download a release (easiest)
 
 1. Open the [Releases](https://github.com/Granite900/PlainText/releases) page.
-2. Download `plaintext-windows-x64.zip` from the latest release.
-3. Unzip it somewhere permanent, e.g. `C:\Tools\PlainText`.
-4. Add that folder to your PATH, **or** run `plaintext.exe` with a full path.
+2. Download the zip for your computer:
+   - **Windows:** `plaintext-windows-x64.zip`
+   - **Mac (Apple Silicon):** `plaintext-macos-arm64.zip`
+   - **Mac (Intel):** `plaintext-macos-x64.zip`
+3. Unzip it somewhere permanent.
+4. Add that folder to your `PATH`, **or** run the `plaintext` binary with a full path.
 
 Check that it works:
 
-```
+```bash
 plaintext version
+```
+
+**macOS:** if the system blocks the app the first time, right-click `plaintext` → **Open**,
+or run:
+
+```bash
+xattr -dr com.apple.quarantine plaintext
 ```
 
 ### Option B — build from this repo
 
-Needs the [Rust toolchain](https://rustup.rs/). On Windows you also need LLVM
-(`libclang`) and the MSVC build tools (see `.cargo/config.toml`).
+Needs the [Rust toolchain](https://rustup.rs/).
 
-```
+```bash
 git clone https://github.com/Granite900/PlainText.git
 cd PlainText
 cargo install --path .
 ```
 
+**Windows only:** also install LLVM (`libclang`) and the MSVC build tools, then copy
+`.cargo/config.toml.example` → `.cargo/config.toml` and set `LIBCLANG_PATH`.
+
+**macOS:** install Xcode Command Line Tools (`xcode-select --install`). That is usually enough.
+
 ## 2. Your first program
 
-```
+```bash
 plaintext new hello
 plaintext run hello/main.pt
 ```
 
 Or copy an example:
 
-```
+```bash
 plaintext run examples/basics.pt
 plaintext check examples/basics.pt
 ```
 
 ## 3. Editor support (VS Code)
 
-The release zip includes `plaintext-lang.vsix`. In VS Code:
+The Windows release zip includes `plaintext-lang.vsix`. On any OS you can also build it from
+`editors/vscode/` (see that folder's README), or copy the `.vsix` from a Windows zip — it works
+on Mac VS Code too.
 
-```
+```bash
 code --install-extension plaintext-lang.vsix
 ```
 
 Then reload the window. `.pt` files get syntax highlighting and the PlainText icon.
-
-(If you cloned the repo instead, package it from `editors/vscode/` — see that folder's README.)
 
 ## 4. Learn the language
 
@@ -71,10 +85,11 @@ Useful commands:
 
 ## 5. Windows file icon (optional)
 
-From a release unzip (or a clone):
+From a release unzip (or a clone), on Windows:
 
-```
+```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-pt-icon.ps1
 ```
 
-That makes `.pt` files show the PlainText icon in File Explorer.
+That makes `.pt` files show the PlainText icon in File Explorer. (Mac Finder icons are not
+automated yet — use the VS Code extension for the icon in the editor.)

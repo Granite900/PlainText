@@ -1,12 +1,13 @@
 // A desktop UI written in PlainText. The window redraws every frame, so labels
 // always match current state. Run with:  plaintext run examples/counter.pt
 //
-// Shows: window background, colors, a custom font, button size, and a sprite.
+// Shows: window background, colors, button size, and a sprite.
+// Font tip (optional): load a .ttf for your OS, then pass `font: ui_font` on widgets.
+//   Windows:  ui_font = load_font("C:/Windows/Fonts/segoeui.ttf")
+//   macOS:    ui_font = load_font("/System/Library/Fonts/Supplemental/Arial Unicode.ttf")
 
 counter = 0
 
-// Load once at the top — then pass the ids into widgets with `font:` / `sprite:`.
-ui_font = load_font("C:/Windows/Fonts/segoeui.ttf")
 btn_face = load_sprite("examples/assets/button.png")
 
 make function called increment() {
@@ -25,7 +26,7 @@ make function called reset() {
 window "Counter" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
     column (padding: 28, spacing: 18, align: center) {
         // Interpolation in labels is re-evaluated each frame.
-        text "You clicked {counter} times" (size: 28, color: white, font: ui_font)
+        text "You clicked {counter} times" (size: 28, color: white)
         row (spacing: 14) {
             // `sprite` paints the button face; `width`/`height` set its size.
             button "− Less" (
@@ -34,8 +35,7 @@ window "Counter" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
                 width: 140,
                 height: 52,
                 size: 22,
-                color: white,
-                font: ui_font
+                color: white
             )
             button "＋ More" (
                 on_click: increment,
@@ -43,8 +43,7 @@ window "Counter" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
                 width: 140,
                 height: 52,
                 size: 22,
-                color: white,
-                font: ui_font
+                color: white
             )
         }
         // No sprite → a solid `bg` rectangle instead.
@@ -54,8 +53,7 @@ window "Counter" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
             width: 160,
             height: 44,
             size: 20,
-            color: white,
-            font: ui_font
+            color: white
         )
     }
 }

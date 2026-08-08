@@ -20,8 +20,9 @@ all backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 **New here?** Start with [GETTING-STARTED.md](GETTING-STARTED.md).
 
 1. Download the latest **[Release](https://github.com/Granite900/PlainText/releases)**
-   (`plaintext-windows-x64.zip`).
-2. Unzip and put `plaintext.exe` on your PATH.
+   for your OS (`plaintext-windows-x64.zip`, `plaintext-macos-arm64.zip`, or
+   `plaintext-macos-x64.zip`).
+2. Unzip and put `plaintext` / `plaintext.exe` on your PATH.
 3. Run an example:
 
 ```
@@ -30,7 +31,8 @@ plaintext check examples/basics.pt
 plaintext new mygame
 ```
 
-Install `plaintext-lang.vsix` from the zip for VS Code highlighting.
+On Windows, install `plaintext-lang.vsix` from the zip for VS Code highlighting (the same
+`.vsix` works on Mac).
 
 ## Learn the language
 
@@ -63,20 +65,26 @@ powershell -ExecutionPolicy Bypass -File scripts\install-pt-icon.ps1
 
 ## Building from source (contributors)
 
-Needs the [Rust toolchain](https://rustup.rs/). On Windows the graphics dependency also needs
-LLVM/`libclang` (for `raylib-sys`'s bindgen) and the MSVC build tools; `.cargo/config.toml`
-points at the default LLVM install path.
+Needs the [Rust toolchain](https://rustup.rs/).
+
+- **Windows:** LLVM/`libclang` + MSVC build tools. Copy `.cargo/config.toml.example` to
+  `.cargo/config.toml` and set `LIBCLANG_PATH`.
+- **macOS:** Xcode Command Line Tools (`xcode-select --install`).
 
 ```
 cargo build
 cargo install --path .
 ```
 
-The debug interpreter is at `target/debug/plaintext.exe`. To build a shareable zip:
+The debug interpreter is at `target/debug/plaintext` (`.exe` on Windows). To build a
+Windows zip locally:
 
 ```
 powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1
 ```
+
+Tagged releases (`v0.1.1`, …) are built for **Windows + macOS** by GitHub Actions
+(`.github/workflows/release.yml`).
 
 ## Status
 

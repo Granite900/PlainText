@@ -432,13 +432,14 @@ Written in parentheses as `name: value`:
 The window itself also accepts `bg` / `background` for the clear color:
 
 ```plaintext
-ui_font = load_font("C:/Windows/Fonts/segoeui.ttf")
+ui_font = load_font("C:/Windows/Fonts/segoeui.ttf")  // Windows; on Mac try /System/Library/Fonts/Supplemental/Arial Unicode.ttf
 btn = load_sprite("button.png")
 
 window "Demo" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
     text "Hello" (size: 28, color: white, font: ui_font)
     button "Go" (on_click: go, sprite: btn, width: 140, height: 52, color: white)
 }
+
 ```
 
 ---

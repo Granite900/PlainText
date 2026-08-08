@@ -1,0 +1,139 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "PlainText",
+  "scopeName": "source.pt",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#function-declaration" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#function-call" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.pt",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.pt",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.pt",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.pt",
+          "match": "\\\\."
+        },
+        {
+          "name": "meta.interpolation.pt",
+          "begin": "\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.interpolation.begin.pt" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.interpolation.end.pt" }
+          },
+          "patterns": [
+            { "include": "#strings" },
+            { "include": "#numbers" },
+            { "include": "#constants" },
+            { "include": "#keywords" },
+            { "include": "#types" },
+            { "include": "#function-call" },
+            { "include": "#operators" }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.pt",
+      "match": "\\b\\d+(\\.\\d+)?\\b"
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.pt",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.nothing.pt",
+          "match": "\\bnothing\\b"
+        },
+        {
+          "name": "variable.language.self.pt",
+          "match": "\\bself\\b"
+        }
+      ]
+    },
+    "function-declaration": {
+      "match": "\\b(called)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.other.pt" },
+        "2": { "name": "entity.name.function.pt" }
+      }
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.pt",
+          "match": "\\b(if|else|while|for|in|repeat|times|loop|return|break|continue|on)\\b"
+        },
+        {
+          "name": "keyword.control.flow.pt",
+          "match": "\\b(wait|start)\\b"
+        },
+        {
+          "name": "storage.type.pt",
+          "match": "\\b(make|function|called|async|class|game|window)\\b"
+        },
+        {
+          "name": "keyword.operator.word.pt",
+          "match": "\\b(and|or|not|is)\\b"
+        },
+        {
+          "name": "keyword.other.pt",
+          "match": "\\b(every|list|dictionary|of|to|import)\\b"
+        },
+        {
+          "name": "support.function.builtin.pt",
+          "match": "\\b(print|to_text|to_number|length|min|greatest|abs|sqrt|floor|ceil|round|random_between|pow|clamp|sin|cos|tan|read_file|write_file|append_file|file_exists|now|clock|after|clear_screen|draw_circle|draw_rectangle|draw_line|draw_text|rgb|rgba|screen_width|screen_height|key_down|key_pressed|mouse_x|mouse_y|mouse_down|mouse_pressed|load_sprite|draw_sprite|draw_sprite_scaled|draw_sprite_rotated|sprite_width|sprite_height|load_sound|play_sound|load_font)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.pt",
+          "match": "\\b(Number|Text|Boolean)\\b"
+        },
+        {
+          "name": "entity.name.type.pt",
+          "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
+        }
+      ]
+    },
+    "function-call": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.call.pt" }
+      }
+    },
+    "operators": {
+      "name": "keyword.operator.pt",
+      "match": "(\\+=|-=|\\*=|/=|==|!=|<=|>=|<|>|\\+|-|\\*|/|%|=)"
+    }
+  }
+}

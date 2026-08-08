@@ -1,0 +1,55 @@
+// A bouncing ball you can nudge with the arrow keys — a first PlainText game.
+// Run with:  plaintext run examples/bounce.pt
+
+class Ball {
+    x: Number
+    y: Number
+    dx: Number      // velocity in pixels per second
+    dy: Number
+    radius = 24
+}
+
+ball = Ball { x: 400, y: 300, dx: 220, dy: 180 }
+
+// A `game` block opens a window. Hooks: on start / on update / on draw.
+game "Bouncing Ball" (width: 800, height: 600) {
+
+    // `delta` is seconds since the last frame — multiply so motion stays smooth.
+    on update(delta) {
+        ball.x = ball.x + ball.dx * delta
+        ball.y = ball.y + ball.dy * delta
+
+        // Bounce off the walls (flip velocity, clamp position).
+        if ball.x < ball.radius {
+            ball.x = ball.radius
+            ball.dx = -ball.dx
+        }
+        if ball.x > 800 - ball.radius {
+            ball.x = 800 - ball.radius
+            ball.dx = -ball.dx
+        }
+        if ball.y < ball.radius {
+            ball.y = ball.radius
+            ball.dy = -ball.dy
+        }
+        if ball.y > 600 - ball.radius {
+            ball.y = 600 - ball.radius
+            ball.dy = -ball.dy
+        }
+
+        // `key_down` is true while the key is held.
+        if key_down("left") {
+            ball.dx = ball.dx - 400 * delta
+        }
+        if key_down("right") {
+            ball.dx = ball.dx + 400 * delta
+        }
+    }
+
+    // Draw only in `on draw` — clear first, then shapes/text.
+    on draw() {
+        clear_screen(skyblue)
+        draw_circle(ball.x, ball.y, ball.radius, red)
+        draw_text("Arrow keys nudge the ball", 20, 20, 20, black)
+    }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "plaintext-lang",
+  "displayName": "PlainText Language",
+  "description": "Syntax highlighting for the PlainText programming language (.pt).",
+  "version": "0.1.4",
+  "publisher": "plaintext",
+  "icon": "icons/pt.png",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "pt",
+        "aliases": [
+          "PlainText",
+          "pt"
+        ],
+        "extensions": [
+          ".pt"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/pt.png",
+          "dark": "./icons/pt.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "pt",
+        "scopeName": "source.pt",
+        "path": "./syntaxes/plaintext.tmLanguage.json"
+      }
+    ]
+  }
+}

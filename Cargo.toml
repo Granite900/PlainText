@@ -1,0 +1,16 @@
+[package]
+name = "plaintext"
+version = "0.1.0"
+edition = "2021"
+description = "The PlainText programming language — a readability-first language for desktop UIs and 2D games."
+
+[dependencies]
+raylib = "5.5"
+
+[[bin]]
+name = "plaintext"
+path = "src/main.rs"
+
+[profile.dev]
+# Faster incremental builds while iterating on the interpreter.
+opt-level = 0

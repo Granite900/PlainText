@@ -1,0 +1,34 @@
+// A tiny shopping-cart program: classes, a flexible parameter, loops, and
+// string interpolation. Run with:  plaintext run examples/cart.pt
+
+class Item {
+    name: Text
+    price: Number
+    quantity = 1          // omitted when creating → defaults to 1
+}
+
+// No type on `items` → it's Dynamic (flexible). Checked at run time.
+make function called total_cost(items) {
+    total = 0
+    for every item in items {
+        total = total + item.price * item.quantity
+    }
+    return total
+}
+
+cart = [
+    Item { name: "Apple", price: 0.50, quantity: 6 },
+    Item { name: "Bread", price: 2.75 }   // quantity defaults to 1
+]
+
+cost = total_cost(cart)
+
+if cost > 10 {
+    print("Total is {cost} — free shipping!")
+} else {
+    print("Total is {cost}")
+}
+
+for every item in cart {
+    print("  {item.quantity} x {item.name} @ {item.price}")
+}

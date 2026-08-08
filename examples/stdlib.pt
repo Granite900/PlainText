@@ -1,0 +1,38 @@
+// A walk through the standard library. Run with:  plaintext run examples/stdlib.pt
+
+// Math — `pi` and `e` are built-in constants.
+print("pi is about {round(pi * 100) / 100}")
+print("2 to the 10th is {pow(2, 10)}")
+print("clamp(15, 0, 10) = {clamp(15, 0, 10)}")   // keeps a value in a range
+print("sqrt(144) = {sqrt(144)}")
+
+// List methods — most return a new value; `remove_at` changes the list.
+nums = [4, 8, 15, 16, 23, 42]
+print("first={nums.first()} last={nums.last()}")
+print("index of 16 is {nums.index_of(16)}")
+print("reversed: {nums.reversed()}")
+print("joined: {nums.join(" - ")}")
+removed = nums.remove_at(0)
+print("removed {removed}, now {nums}")
+
+// Text methods — PlainText uses Unicode characters, not raw bytes.
+name = "  Ada Lovelace  "
+clean = name.trim()
+print("cleaned: '{clean}'")
+print("upper: {clean.upper()}")
+print("starts with Ada? {clean.starts_with("Ada")}")
+print("replace: {clean.replace("Ada", "Grace")}")
+parts = clean.split(" ")
+print("first name: {parts.first()}, {parts.length()} parts")
+print("dashes: {"-".repeat(10)}")
+
+// Dictionary methods — `.get` / `.remove` return `nothing` if the key is missing.
+scores = dictionary { "Ada": 95, "Grace": 88 }
+print("keys: {scores.keys()}")
+print("has Ada? {scores.has("Ada")}")
+scores.remove("Ada")
+print("after remove: {scores.values()}")
+
+// `clock()` is seconds since this program started; `now()` is unix time.
+t = clock()
+print("clock is a number? {t >= 0}")

@@ -1,0 +1,23 @@
+// Timers without freezing the program.
+// `after(seconds, fn)` runs once; `every(seconds, fn)` repeats.
+// In a console program they tick in real time; in a `game` block they follow
+// the frame loop. Run with:  plaintext run examples/timers.pt
+
+count = 0
+
+make function called tick() {
+    count = count + 1
+    print("tick {count}")
+    if count >= 3 {
+        print("done")
+        // Tip: `every` keeps firing — stop the program with Ctrl+C when finished.
+    }
+}
+
+make function called greet() {
+    print("hello after half a second")
+}
+
+print("starting")
+after(0.5, greet)    // once, 0.5s from now
+every(0.3, tick)     // again every 0.3s

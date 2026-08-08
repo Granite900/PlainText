@@ -1,0 +1,67 @@
+// Core language tour: functions, classes, loops, dictionaries, and optionals.
+// Run with:  plaintext run examples/basics.pt
+
+// Parameter types are written after `:`. The return type is inferred.
+make function called classify_score(score: Number) {
+    if score >= 90 {
+        return "A"
+    } else if score >= 80 {
+        return "B"
+    } else {
+        return "C"
+    }
+}
+
+// A class groups data + methods. Fields need a type or a default value.
+class Player {
+    name: Text          // required when you create a Player
+    health = 100        // optional; defaults to 100
+
+    // Inside a method, `self` is the instance you called it on.
+    make function called take_damage(amount: Number) {
+        self.health = self.health - amount
+        if self.health <= 0 {
+            print("{self.name} has been defeated")
+        }
+    }
+}
+
+hero = Player { name: "Kara" }   // health uses the default
+hero.take_damage(30)
+print("{hero.name} has {hero.health} health")   // {…} inserts values into text
+
+// `for every` walks a list (also works on text and dictionaries).
+scores = [95, 82, 74, 88]
+total = 0
+for every score in scores {
+    total = total + score
+    print("{score} -> {classify_score(score)}")
+}
+print("Average: {total / scores.length()}")
+
+// `repeat N times` and `while` are the other loop forms.
+repeat 3 times {
+    print("tick")
+}
+
+count = 3
+while count > 0 {
+    print("countdown {count}")
+    count = count - 1
+}
+
+// Dictionaries store key → value. Text also has methods like `.upper()`.
+ages = dictionary { "Ada": 36, "Alan": 41 }
+print("Ada is {ages["Ada"]}")
+print("Loudly: {"hello".upper()}")
+print("greatest(3, 9, 5) = {greatest(3, 9, 5)}")
+
+// `Text?` means "Text or nothing". Check with `is not nothing` before using it.
+class Contact {
+    name: Text
+    nickname: Text?
+}
+c = Contact { name: "Robert", nickname: "Bob" }
+if c.nickname is not nothing {
+    print("{c.name} goes by {c.nickname}")
+}

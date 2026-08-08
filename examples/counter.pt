@@ -1,0 +1,61 @@
+// A desktop UI written in PlainText. The window redraws every frame, so labels
+// always match current state. Run with:  plaintext run examples/counter.pt
+//
+// Shows: window background, colors, a custom font, button size, and a sprite.
+
+counter = 0
+
+// Load once at the top — then pass the ids into widgets with `font:` / `sprite:`.
+ui_font = load_font("C:/Windows/Fonts/segoeui.ttf")
+btn_face = load_sprite("examples/assets/button.png")
+
+make function called increment() {
+    counter = counter + 1
+}
+
+make function called decrement() {
+    counter = counter - 1
+}
+
+make function called reset() {
+    counter = 0
+}
+
+// `bg` on the window clears the whole surface. Widgets live in column/row trees.
+window "Counter" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
+    column (padding: 28, spacing: 18, align: center) {
+        // Interpolation in labels is re-evaluated each frame.
+        text "You clicked {counter} times" (size: 28, color: white, font: ui_font)
+        row (spacing: 14) {
+            // `sprite` paints the button face; `width`/`height` set its size.
+            button "− Less" (
+                on_click: decrement,
+                sprite: btn_face,
+                width: 140,
+                height: 52,
+                size: 22,
+                color: white,
+                font: ui_font
+            )
+            button "＋ More" (
+                on_click: increment,
+                sprite: btn_face,
+                width: 140,
+                height: 52,
+                size: 22,
+                color: white,
+                font: ui_font
+            )
+        }
+        // No sprite → a solid `bg` rectangle instead.
+        button "Reset" (
+            on_click: reset,
+            bg: rgb(90, 95, 110),
+            width: 160,
+            height: 44,
+            size: 20,
+            color: white,
+            font: ui_font
+        )
+    }
+}

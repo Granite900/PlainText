@@ -1,0 +1,5 @@
+# bindgen (pulled in by raylib-sys) needs libclang to generate the Raylib
+# bindings. Point it at the LLVM install so `cargo build` works without setting
+# LIBCLANG_PATH by hand each time.
+[env]
+LIBCLANG_PATH = "C:\\Program Files\\LLVM\\bin"

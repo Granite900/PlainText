@@ -1,0 +1,25 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Local smoke / temp
+smoke_err.txt
+smoke_out.txt
+*.pdb
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Packaged artifacts (built by scripts/package-release.ps1)
+/dist/
+editors/vscode/*.vsix
+editors/vscode/README.md.bak
+editors/vscode/README.md.pack
+
+# Resolved debug icons
+assets/resolved-pt-icon.png

@@ -10,8 +10,9 @@ language itself.
 1. Open the [Releases](https://github.com/Granite900/PlainText/releases) page.
 2. Download the zip for your computer:
    - **Windows:** `plaintext-windows-x64.zip`
-   - **Mac (Apple Silicon):** `plaintext-macos-arm64.zip`
-   - **Mac (Intel):** `plaintext-macos-x64.zip`
+   - **Mac (Apple Silicon — M1/M2/M3/M4):** `plaintext-macos-arm64.zip`
+   - **Mac (Intel):** build from source for now (see Option B), or use Rosetta with the
+     Apple Silicon build if needed.
 3. Unzip it somewhere permanent.
 4. Add that folder to your `PATH`, **or** run the `plaintext` binary with a full path.
 

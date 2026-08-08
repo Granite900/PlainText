@@ -20,8 +20,7 @@ all backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 **New here?** Start with [GETTING-STARTED.md](GETTING-STARTED.md).
 
 1. Download the latest **[Release](https://github.com/Granite900/PlainText/releases)**
-   for your OS (`plaintext-windows-x64.zip`, `plaintext-macos-arm64.zip`, or
-   `plaintext-macos-x64.zip`).
+   for your OS (`plaintext-windows-x64.zip` or `plaintext-macos-arm64.zip`).
 2. Unzip and put `plaintext` / `plaintext.exe` on your PATH.
 3. Run an example:
 

@@ -29,9 +29,8 @@ jobs:
           - os: macos-14
             artifact: plaintext-macos-arm64
             binary: plaintext
-          - os: macos-13
-            artifact: plaintext-macos-x64
-            binary: plaintext
+          # Intel Mac users: build from source, or ask for an x64 artifact later.
+          # (macos-13 runners are often stuck queued on free GitHub Actions.)
 
     runs-on: ${{ matrix.os }}
 
@@ -141,8 +140,7 @@ jobs:
             | Platform | File |
             |----------|------|
             | Windows x64 | `plaintext-windows-x64.zip` |
-            | macOS Apple Silicon (M1/M2/M3) | `plaintext-macos-arm64.zip` |
-            | macOS Intel | `plaintext-macos-x64.zip` |
+            | macOS Apple Silicon (M1/M2/M3/M4) | `plaintext-macos-arm64.zip` |
 
             Unzip, add the folder to your `PATH`, then:
 

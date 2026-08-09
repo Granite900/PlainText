@@ -19,7 +19,7 @@ then come back here. See [Troubleshooting](troubleshooting.md) if something feel
 
 ## Path A — Learn by doing (recommended)
 
-Eleven short lessons. Read one, run the linked example, then move on.
+Twelve short lessons. Read one, run the linked example, then move on.
 About **60–90 minutes** if you try every exercise.
 
 | # | Lesson | What you practice |
@@ -35,6 +35,7 @@ About **60–90 minutes** if you try every exercise.
 | 9 | [Modules](learn/09-modules.md) | Splitting a program across files |
 | 10 | [Games](learn/10-games.md) | `game`, update/draw, sprites, input |
 | 11 | [Desktop UI](learn/11-ui.md) | `window`, buttons, layout |
+| 12 | [Neural networks](learn/12-neural-networks.md) | `import ai`, train / predict, save, GPU |
 
 Every example under [`examples/`](../examples/) is meant to be readable — steal from them freely.
 

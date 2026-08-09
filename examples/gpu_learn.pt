@@ -1,0 +1,22 @@
+// The same XOR network as learn.pt, but trained on the GPU.
+// Run with:  plaintext run examples/gpu_learn.pt
+
+import ai
+
+// device: picks where training runs. Options:
+//   auto  — any GPU the machine has (falls back to the CPU if none)
+//   cuda  — an NVIDIA GPU        rocm — an AMD GPU        mps — an Apple GPU
+//   vulkan / dx12 — a specific backend      cpu — force the CPU
+// If the chosen GPU can't be opened, training falls back to the CPU and says so.
+brain = neural_network(inputs: 2, hidden: [12, 12], outputs: 1, device: auto)
+
+examples = [[0, 0], [0, 1], [1, 0], [1, 1]]
+answers  = [[0],    [1],    [1],    [0]]
+
+// On a GPU, training runs in batches (the whole dataset per epoch).
+final_error = brain.train(examples, answers, epochs: 4000, optimizer: adam, rate: 0.05)
+print("final error: {final_error}")
+
+for every pair in examples {
+    print("{pair} -> {brain.predict(pair)}")
+}

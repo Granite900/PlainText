@@ -23,8 +23,9 @@ It assumes you can run programs with `plaintext run yourfile.pt` (version **0.1.
 11. [Making a desktop UI](#11-making-a-desktop-ui)
 12. [The standard library at a glance](#12-the-standard-library-at-a-glance)
 13. [Splitting a program across files](#13-splitting-a-program-across-files)
-14. [The REPL](#the-repl)
-15. [Appendix: when do I have to write a type?](#appendix-when-do-i-have-to-write-a-type)
+14. [Neural networks (the ai module)](#14-neural-networks-the-ai-module)
+15. [The REPL](#the-repl)
+16. [Appendix: when do I have to write a type?](#appendix-when-do-i-have-to-write-a-type)
 
 ---
 
@@ -589,6 +590,102 @@ can't itself contain a `game` or `window` block.)
 
 ---
 
+## 14. Neural networks (the `ai` module)
+
+Put `import ai` at the top to train a small neural network: it learns a pattern from
+example → answer pairs, then predicts answers for new inputs.
+
+```plaintext
+import ai
+
+// 2 inputs → one hidden layer of 8 → 1 output
+brain = neural_network(inputs: 2, hidden: [8], outputs: 1)
+
+examples = [[0, 0], [0, 1], [1, 0], [1, 1]]
+answers  = [[0],    [1],    [1],    [0]]        // XOR
+
+brain.train(examples, answers, epochs: 3000, optimizer: adam, rate: 0.05)
+
+print(brain.predict([1, 0]))   // close to [1]
+print(brain.predict([1, 1]))   // close to [0]
+```
+
+**Building one.** `neural_network(inputs:, hidden:, outputs:)`. `hidden` is either one number (a
+single hidden layer) or a list of numbers — one per layer — so you choose both how many hidden
+layers there are and how big each one is:
+
+```plaintext
+big = neural_network(inputs: 4, hidden: [16, 12, 8], outputs: 3)
+```
+
+**Training.** `brain.train(examples, answers, ...settings)` runs many rounds. Every setting is
+optional:
+
+| setting | what it does | default |
+|---|---|---|
+| `epochs` | how many passes over the data | 1000 |
+| `optimizer` | the update rule: `sgd`, `momentum`, `rmsprop`, or `adam` | `sgd` |
+| `rate` | learning rate — how big each step is | per optimizer |
+| `decay` | slowly shrinks the rate as training goes on | 0 (off) |
+
+`examples` and `answers` are lists of lists of numbers; they must line up (same count, and each row
+the right width for the network's inputs and outputs). You don't have to type them out by hand —
+[`examples/classify.pt`](../examples/classify.pt) builds its training set from random points and then
+scores the trained network's accuracy on fresh ones.
+
+**Training on a GPU.** Add `device:` when you build the network to train on a graphics card:
+
+```plaintext
+brain = neural_network(inputs: 2, hidden: [16, 12], outputs: 1, device: auto)
+```
+
+| `device:` | where it trains |
+|---|---|
+| `auto` (or `gpu`) | any GPU the machine has |
+| `cuda` | an NVIDIA GPU |
+| `rocm` | an AMD GPU |
+| `mps` | an Apple GPU (Metal) |
+| `vulkan` / `dx12` | a specific backend |
+| `cpu` | force the CPU |
+
+The same code runs on every vendor — one GPU backend covers NVIDIA, AMD, and Apple. If the chosen
+GPU can't be opened (say you ask for `cuda` on a machine with no NVIDIA card), training **falls back
+to the CPU and prints a note** rather than failing. On a GPU, training runs in batches (the whole
+dataset each epoch) instead of one example at a time, and in single precision (`f32`); the CPU keeps
+double precision. GPUs pay off for large networks and datasets — for a tiny network like XOR the CPU
+is actually faster, since there's almost no work to hide the setup cost. `train_once` always runs on
+the CPU.
+
+**Watching it learn.** `brain.train_once(examples, answers, ...settings)` runs a *single* round and
+returns the current error, so training can happen inside a game loop and draw its own progress:
+
+```plaintext
+on update(delta) {
+    error = brain.train_once(examples, answers, optimizer: adam, rate: 0.05)
+}
+```
+
+(See [`examples/watch_learn.pt`](../examples/watch_learn.pt) for the full live demo.)
+
+**Using and saving.**
+
+```plaintext
+answer = brain.predict([1, 0])            // a list of numbers, one per output
+score  = brain.loss(examples, answers)    // current average error, without training
+brain.save("brain.ai")                    // later:  brain = load_network("brain.ai")
+```
+
+[`examples/remember.pt`](../examples/remember.pt) trains a network, saves it, and loads it straight
+back to show the trained brain survives a round-trip.
+
+This is a small feed-forward network — made for learning and for little numeric problems, not for
+large images or text. Targets train best scaled to the 0–1 range.
+
+> Those `name: value` settings work in any call, not just training — a call can end with labelled
+> arguments like `epochs: 3000` for clarity.
+
+---
+
 ## The REPL
 
 Run `plaintext repl` for an interactive session. Type an expression to see its value; anything
@@ -602,6 +699,36 @@ until their braces close. Type `exit` to leave.
 > greeting.upper()
 HI
 ```
+
+---
+
+## Building a standalone app
+
+`plaintext build game.pt` turns your program into a single executable your friends can run
+**without installing PlainText** — it bundles your code (and every file it imports) into a copy
+of the runtime.
+
+```text
+plaintext build game.pt            # → game.exe (Windows) or game (macOS)
+plaintext build game.pt -o Game    # choose the output name
+plaintext build game.pt --run      # build, then run it to check
+```
+
+If your program loads sprites or sounds from an `assets/` folder next to it, that folder is
+copied next to the app so the paths still work.
+
+**Making a Mac app (from any computer).** Building doesn't recompile — it just appends your
+program to a runtime binary — so you can build a Mac app from Windows by pointing at a macOS
+`plaintext` binary (the one from the macOS release zip):
+
+```text
+plaintext build game.pt --runtime ./plaintext-macos-arm64 -o Game
+```
+
+On the Mac the first run may need `chmod +x Game`, and if Gatekeeper complains,
+`xattr -dr com.apple.quarantine Game`. On Windows, SmartScreen may ask once — choose
+**More info → Run anyway**. (These prompts appear because the app isn't code-signed; signing is a
+separate, paid step.)
 
 ---
 

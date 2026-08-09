@@ -33,6 +33,8 @@ backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 - **Catches mistakes early.** A real type checker, but inference means you almost never write a type.
 - **Games & UIs built in.** `game { on update … on draw … }` and `window { column { button … } }`, drawn natively.
 - **Batteries included.** Math, lists (map/filter/fold-style tools), dictionaries, text, files, time, timers, and console input out of the box.
+- **Train a neural network.** `import ai`, then `neural_network(...)`, `.train(...)`, `.predict(...)` — even watch it learn live in a game window, or train on a GPU (`device: auto`, covering NVIDIA / AMD / Apple).
+- **Ship a single app.** `plaintext build game.pt` bundles your program into a standalone executable (Windows or macOS).
 - **No memory management.** Garbage collected — you never think about it.
 
 ## Get started
@@ -47,6 +49,7 @@ backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 ```
 plaintext run examples/basics.pt     # run a program
 plaintext check examples/basics.pt   # check for errors without running
+plaintext build examples/basics.pt   # bundle into a standalone app
 plaintext repl                       # try expressions interactively
 plaintext new mygame                 # scaffold a new project
 ```
@@ -113,6 +116,11 @@ game "Bounce" (width: 800, height: 600) {
 | [`examples/spawner.pt`](examples/spawner.pt) | timers driving a game (spawning objects) |
 | [`examples/catch.pt`](examples/catch.pt)     | a **complete** arcade game — score, lives, game over, restart |
 | [`examples/counter.pt`](examples/counter.pt) | a **complete** desktop UI — buttons and a live label |
+| [`examples/learn.pt`](examples/learn.pt)     | `import ai` — train a neural network to learn XOR |
+| [`examples/classify.pt`](examples/classify.pt) | a real task — learn "is this point inside a circle?" and score accuracy |
+| [`examples/remember.pt`](examples/remember.pt) | `save` a trained network and `load_network` it back |
+| [`examples/gpu_learn.pt`](examples/gpu_learn.pt) | train on a GPU (`device: auto`, covers NVIDIA / AMD / Apple) |
+| [`examples/watch_learn.pt`](examples/watch_learn.pt) | watch a neural network learn live in a game window |
 
 ## Learn the language
 

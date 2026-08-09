@@ -148,6 +148,13 @@ impl Interpreter {
             env_declare(&self.globals, "pi", Value::Number(std::f64::consts::PI));
             env_declare(&self.globals, "e", Value::Number(std::f64::consts::E));
         }
+        if self.imports.contains("ai") {
+            // Optimizer and device names as bare words, so `optimizer: adam` and
+            // `device: rocm` need no quotes.
+            for word in ["sgd", "adam", "momentum", "rmsprop", "cpu", "gpu", "auto", "cuda", "rocm", "mps", "vulkan", "dx12"] {
+                env_declare(&self.globals, word, Value::text(word));
+            }
+        }
     }
 
     /// Advance all timers by `dt` seconds, firing any that come due. Called once
@@ -719,6 +726,10 @@ impl Interpreter {
                 return Err(Diagnostic::new(span, format!("`{}` needs the math module", name))
                     .with_hint("add `import math` at the top of your file"));
             }
+            if b.is_ai() && !self.imports.contains("ai") {
+                return Err(Diagnostic::new(span, format!("`{}` needs the ai module", name))
+                    .with_hint("add `import ai` at the top of your file"));
+            }
             return Ok(Value::Builtin(b));
         }
         Err(Diagnostic::new(span, format!("unknown name `{}`", name))
@@ -1056,6 +1067,7 @@ impl Interpreter {
             Value::List(list) => self.list_method(list, name, args, span),
             Value::Text(s) => self.text_method(s, name, args, span),
             Value::Dictionary(map) => self.map_method(map, name, args, span),
+            Value::Network(net) => self.network_method(&net.clone(), name, args, span),
             other => Err(Diagnostic::new(
                 span,
                 format!("a {} has no method `{}`", other.type_name(), name),
@@ -1365,6 +1377,231 @@ impl Interpreter {
             }
             _ => Err(Diagnostic::new(span, format!("a dictionary has no method `{}`", name))
                 .with_hint("maps have length, has, get, keys, values, is_empty, remove")),
+        }
+    }
+
+    fn network_method(
+        &mut self,
+        net: &Rc<RefCell<crate::nn::Net>>,
+        name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> EvalResult {
+        match name {
+            "predict" => {
+                self.expect_arity(name, &args, 1, span)?;
+                let input = self.as_number_row(&args[0], span)?;
+                let n = net.borrow();
+                if input.len() != n.inputs() {
+                    return Err(Diagnostic::new(
+                        span,
+                        format!("this network expects {} input(s), but that example has {}", n.inputs(), input.len()),
+                    ));
+                }
+                let out = n.predict(&input);
+                Ok(self.new_list(out.into_iter().map(Value::Number).collect()))
+            }
+            "train" | "train_once" => {
+                if args.len() < 2 || args.len() > 3 {
+                    return Err(Diagnostic::new(
+                        span,
+                        format!("{}() takes examples, answers, and optional settings", name),
+                    ));
+                }
+                let inputs = self.as_number_rows(&args[0], span)?;
+                let targets = self.as_number_rows(&args[1], span)?;
+                if inputs.len() != targets.len() {
+                    return Err(Diagnostic::new(
+                        span,
+                        format!("got {} examples but {} answers — they must line up", inputs.len(), targets.len()),
+                    ));
+                }
+                let opts = args.get(2);
+                self.check_shapes(net, &inputs, &targets, span)?;
+                let cfg = self.train_cfg(opts, span)?;
+                let loss = if name == "train_once" {
+                    // The live, per-frame path always runs on the CPU: one epoch
+                    // on a GPU would be dominated by upload/readback overhead.
+                    net.borrow_mut().train_epoch(&inputs, &targets, &cfg)
+                } else {
+                    let epochs = self.opt_number(opts, "epochs", 1000.0, span)?.max(0.0) as u64;
+                    let device = net.borrow().device();
+                    self.run_training(net, device, &cfg, &inputs, &targets, epochs, span)?
+                };
+                Ok(Value::Number(loss))
+            }
+            "loss" | "error" => {
+                self.expect_arity(name, &args, 2, span)?;
+                let inputs = self.as_number_rows(&args[0], span)?;
+                let targets = self.as_number_rows(&args[1], span)?;
+                Ok(Value::Number(net.borrow().loss(&inputs, &targets)))
+            }
+            "save" => {
+                self.expect_arity(name, &args, 1, span)?;
+                let path = self.as_text(&args[0], span)?;
+                net.borrow().save(&path).map(|_| Value::Nothing).map_err(|e| {
+                    Diagnostic::new(span, format!("couldn't save the network to \"{}\": {}", path, e))
+                })
+            }
+            _ => Err(Diagnostic::new(span, format!("a neural network has no method `{}`", name))
+                .with_hint("networks have train, train_once, predict, loss, save")),
+        }
+    }
+
+    /// Run `epochs` of training, dispatching on the network's chosen device:
+    /// no device → the classic online CPU trainer; `cpu` → the batched CPU
+    /// trainer; a GPU kind → the GPU, falling back to the batched CPU trainer
+    /// (with a note) if no such device can be opened.
+    fn run_training(
+        &self,
+        net: &Rc<RefCell<crate::nn::Net>>,
+        device: Option<crate::gpu::DeviceKind>,
+        cfg: &crate::nn::TrainCfg,
+        inputs: &[Vec<f64>],
+        targets: &[Vec<f64>],
+        epochs: u64,
+        span: Span,
+    ) -> Result<f64, Diagnostic> {
+        use crate::gpu::DeviceKind;
+        match device {
+            None => Ok(self.train_cpu(net, cfg, inputs, targets, epochs, false)),
+            Some(DeviceKind::Cpu) => {
+                println!("neural network: training on the cpu");
+                Ok(self.train_cpu(net, cfg, inputs, targets, epochs, true))
+            }
+            Some(kind) => match crate::gpu::open(kind) {
+                Ok(gpu) => {
+                    println!("neural network: training on {}", gpu.info);
+                    let mut n = net.borrow_mut();
+                    crate::gpu::train(&gpu, &mut n, cfg, inputs, targets, epochs)
+                        .map_err(|e| Diagnostic::new(span, format!("GPU training failed: {}", e)))
+                }
+                Err(reason) => {
+                    println!("neural network: no GPU available ({}), using the cpu", reason);
+                    Ok(self.train_cpu(net, cfg, inputs, targets, epochs, true))
+                }
+            },
+        }
+    }
+
+    /// The CPU trainer loop. `batched` picks full-dataset gradient descent (the
+    /// GPU's algorithm); otherwise the classic per-sample online updates.
+    fn train_cpu(
+        &self,
+        net: &Rc<RefCell<crate::nn::Net>>,
+        cfg: &crate::nn::TrainCfg,
+        inputs: &[Vec<f64>],
+        targets: &[Vec<f64>],
+        epochs: u64,
+        batched: bool,
+    ) -> f64 {
+        let mut last = net.borrow().loss(inputs, targets);
+        for _ in 0..epochs {
+            let mut n = net.borrow_mut();
+            last = if batched {
+                n.train_epoch_batched(inputs, targets, cfg)
+            } else {
+                n.train_epoch(inputs, targets, cfg)
+            };
+        }
+        last
+    }
+
+    /// Check that every example matches the network's input width and every
+    /// answer matches its output width.
+    fn check_shapes(
+        &self,
+        net: &Rc<RefCell<crate::nn::Net>>,
+        inputs: &[Vec<f64>],
+        targets: &[Vec<f64>],
+        span: Span,
+    ) -> Result<(), Diagnostic> {
+        let n = net.borrow();
+        for (i, row) in inputs.iter().enumerate() {
+            if row.len() != n.inputs() {
+                return Err(Diagnostic::new(
+                    span,
+                    format!("example {} has {} number(s), but the network expects {} input(s)", i + 1, row.len(), n.inputs()),
+                ));
+            }
+        }
+        for (i, row) in targets.iter().enumerate() {
+            if row.len() != n.outputs() {
+                return Err(Diagnostic::new(
+                    span,
+                    format!("answer {} has {} number(s), but the network has {} output(s)", i + 1, row.len(), n.outputs()),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Read the optimizer/rate/decay settings from the trailing options dict.
+    fn train_cfg(&self, opts: Option<&Value>, span: Span) -> Result<crate::nn::TrainCfg, Diagnostic> {
+        let name = self.opt_text(opts, "optimizer", "sgd", span)?;
+        let opt = crate::nn::Opt::from_name(&name).ok_or_else(|| {
+            Diagnostic::new(span, format!("unknown optimizer \"{}\"", name))
+                .with_hint("choose sgd, momentum, rmsprop, or adam")
+        })?;
+        let rate = self.opt_number(opts, "rate", default_rate(opt), span)?;
+        let decay = self.opt_number(opts, "decay", 0.0, span)?;
+        Ok(crate::nn::TrainCfg { opt, rate, decay })
+    }
+
+    fn opt_number(&self, opts: Option<&Value>, key: &str, default: f64, span: Span) -> Result<f64, Diagnostic> {
+        match dict_get(opts, key) {
+            Some(v) => self.as_number(&v, span),
+            None => Ok(default),
+        }
+    }
+
+    fn opt_text(&self, opts: Option<&Value>, key: &str, default: &str, span: Span) -> Result<String, Diagnostic> {
+        match dict_get(opts, key) {
+            Some(v) => self.as_text(&v, span),
+            None => Ok(default.to_string()),
+        }
+    }
+
+    /// A list of numbers → `Vec<f64>`.
+    fn as_number_row(&self, v: &Value, span: Span) -> Result<Vec<f64>, Diagnostic> {
+        match v {
+            Value::List(l) => l.borrow().iter().map(|item| self.as_number(item, span)).collect(),
+            other => Err(Diagnostic::new(
+                span,
+                format!("expected a list of numbers, got a {}", other.type_name()),
+            )),
+        }
+    }
+
+    /// A list of lists of numbers → rows of `f64`.
+    fn as_number_rows(&self, v: &Value, span: Span) -> Result<Vec<Vec<f64>>, Diagnostic> {
+        match v {
+            Value::List(rows) => rows.borrow().iter().map(|r| self.as_number_row(r, span)).collect(),
+            other => Err(Diagnostic::new(
+                span,
+                format!("expected a list of examples (a list of lists of numbers), got a {}", other.type_name()),
+            )),
+        }
+    }
+
+    /// Interpret the `hidden:` argument (a number or a list of numbers) as the
+    /// hidden layer sizes.
+    fn hidden_sizes(&self, hidden: Option<&Value>, span: Span) -> Result<Vec<usize>, Diagnostic> {
+        match hidden {
+            None | Some(Value::Nothing) => Ok(Vec::new()),
+            Some(Value::Number(n)) => Ok(vec![positive_size(*n, span, "a hidden layer")?]),
+            Some(Value::List(l)) => l
+                .borrow()
+                .iter()
+                .map(|item| {
+                    let n = self.as_number(item, span)?;
+                    positive_size(n, span, "a hidden layer")
+                })
+                .collect(),
+            Some(other) => Err(Diagnostic::new(
+                span,
+                format!("hidden should be a number or a list of numbers, got a {}", other.type_name()),
+            )),
         }
     }
 
@@ -1720,6 +1957,54 @@ impl Interpreter {
                 self.timers.push(Timer { remaining: secs, interval, callback });
                 Ok(Value::Nothing)
             }
+            Builtin::NeuralNetwork => {
+                // Positional (inputs, hidden, outputs) or keyword options.
+                let (inputs, hidden, outputs) = match args.len() {
+                    1 => {
+                        let o = args.first();
+                        (
+                            self.opt_number(o, "inputs", 0.0, span)?,
+                            dict_get(o, "hidden"),
+                            self.opt_number(o, "outputs", 0.0, span)?,
+                        )
+                    }
+                    3 => (
+                        self.as_number(&args[0], span)?,
+                        Some(args[1].clone()),
+                        self.as_number(&args[2], span)?,
+                    ),
+                    _ => {
+                        return Err(Diagnostic::new(span, "neural_network needs inputs, hidden, and outputs")
+                            .with_hint("e.g. neural_network(inputs: 2, hidden: [6, 6], outputs: 1)"));
+                    }
+                };
+                let inputs = positive_size(inputs, span, "the number of inputs")?;
+                let outputs = positive_size(outputs, span, "the number of outputs")?;
+                let mut sizes = vec![inputs];
+                sizes.extend(self.hidden_sizes(hidden.as_ref(), span)?);
+                sizes.push(outputs);
+
+                self.next_rand(); // advance the RNG so each network differs
+                let mut net = crate::nn::Net::new(sizes, self.rng_state.get());
+                if let Some(dv) = dict_get(args.first(), "device") {
+                    let name = self.as_text(&dv, span)?;
+                    let kind = crate::gpu::DeviceKind::parse(&name).ok_or_else(|| {
+                        Diagnostic::new(span, format!("unknown device \"{}\"", name))
+                            .with_hint("choose cpu, gpu, cuda, rocm, mps, vulkan, or dx12")
+                    })?;
+                    net.set_device(Some(kind));
+                }
+                Ok(Value::Network(Rc::new(RefCell::new(net))))
+            }
+            Builtin::LoadNetwork => {
+                self.expect_arity("load_network", &args, 1, span)?;
+                let path = self.as_text(&args[0], span)?;
+                match crate::nn::Net::load(&path) {
+                    Some(net) => Ok(Value::Network(Rc::new(RefCell::new(net)))),
+                    None => Err(Diagnostic::new(span, format!("couldn't load a network from \"{}\"", path))
+                        .with_hint("is it a file saved with a network's .save(...)?")),
+                }
+            }
         }
     }
 
@@ -1871,6 +2156,35 @@ impl Interpreter {
     }
 }
 
+/// Look up a key in the trailing options dictionary of a call, if present.
+fn dict_get(opts: Option<&Value>, key: &str) -> Option<Value> {
+    if let Some(Value::Dictionary(m)) = opts {
+        m.borrow().get(&MapKey::Text(key.to_string()))
+    } else {
+        None
+    }
+}
+
+/// A sensible default learning rate per optimizer (users can override with `rate:`).
+fn default_rate(opt: crate::nn::Opt) -> f64 {
+    use crate::nn::Opt::*;
+    match opt {
+        Sgd => 0.5,
+        Momentum => 0.2,
+        RmsProp => 0.01,
+        Adam => 0.05,
+    }
+}
+
+/// Interpret a Number as a positive layer size (whole number ≥ 1).
+fn positive_size(n: f64, span: Span, what: &str) -> Result<usize, Diagnostic> {
+    if n < 1.0 || n.fract() != 0.0 {
+        Err(Diagnostic::new(span, format!("{} must be a whole number of at least 1, got {}", what, format_number(n))))
+    } else {
+        Ok(n as usize)
+    }
+}
+
 fn is_callable(v: &Value) -> bool {
     matches!(
         v,
@@ -1887,6 +2201,7 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::List(x), Value::List(y)) => Rc::ptr_eq(x, y),
         (Value::Dictionary(x), Value::Dictionary(y)) => Rc::ptr_eq(x, y),
         (Value::Class(x), Value::Class(y)) => Rc::ptr_eq(x, y),
+        (Value::Network(x), Value::Network(y)) => Rc::ptr_eq(x, y),
         _ => false,
     }
 }

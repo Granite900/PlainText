@@ -1,11 +1,14 @@
 [package]
 name = "plaintext"
-version = "0.1.2"
+version = "2.0.0"
 edition = "2021"
 description = "The PlainText programming language — a readability-first language for desktop UIs and 2D games."
 
 [dependencies]
 raylib = "5.5"
+wgpu = "22"
+pollster = "0.3"
+bytemuck = { version = "1", features = ["derive"] }
 
 [[bin]]
 name = "plaintext"

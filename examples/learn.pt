@@ -1,0 +1,23 @@
+// Teaching a tiny neural network the XOR pattern (true when exactly one input is 1).
+// Run with:  plaintext run examples/learn.pt
+
+import ai
+
+// 2 inputs → one hidden layer of 8 neurons → 1 output.
+brain = neural_network(inputs: 2, hidden: [8], outputs: 1)
+
+examples = [[0, 0], [0, 1], [1, 0], [1, 1]]
+answers  = [[0],    [1],    [1],    [0]]
+
+// Train with the Adam optimizer. Other choices: sgd, momentum, rmsprop.
+// You can also pass rate: and decay: to tune the learning.
+final_error = brain.train(examples, answers, epochs: 3000, optimizer: adam, rate: 0.05)
+print("final error: {final_error}")
+
+for every pair in examples {
+    print("{pair} -> {brain.predict(pair)}")
+}
+
+// Save the trained brain to reuse later:
+//   brain.save("xor.ai")
+//   brain = load_network("xor.ai")

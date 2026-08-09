@@ -28,6 +28,8 @@ pub enum Ty {
     List(Box<Ty>),
     Dictionary(Box<Ty>, Box<Ty>),
     Class(String),
+    /// A neural network (from `import ai`).
+    Network,
     /// `T?` — may hold a `T` or `nothing`.
     Optional(Box<Ty>),
     Function(Rc<FnSig>),
@@ -52,6 +54,7 @@ impl Ty {
             Ty::List(t) => format!("{} list", t.describe()),
             Ty::Dictionary(k, v) => format!("dictionary of {} to {}", k.describe(), v.describe()),
             Ty::Class(n) => n.clone(),
+            Ty::Network => "neural network".into(),
             Ty::Optional(t) => format!("{}?", t.describe()),
             Ty::Function(_) => "function".into(),
             Ty::Dynamic => "anything".into(),
@@ -119,6 +122,11 @@ impl Checker {
         if self.imports.contains("math") {
             self.declare("pi", Ty::Number);
             self.declare("e", Ty::Number);
+        }
+        if self.imports.contains("ai") {
+            for word in ["sgd", "adam", "momentum", "rmsprop", "cpu", "gpu", "auto", "cuda", "rocm", "mps", "vulkan", "dx12"] {
+                self.declare(word, Ty::Text);
+            }
         }
         for (name, _) in crate::gfx::named_colors() {
             self.declare(name, Ty::List(Box::new(Ty::Number)));
@@ -415,11 +423,11 @@ impl Checker {
             }
             Stmt::Break(_) | Stmt::Continue(_) => {}
             Stmt::Import { module, span } => {
-                if module != "math" {
+                if module != "math" && module != "ai" {
                     self.error(
                         *span,
                         format!("unknown module `{}`", module),
-                        Some("the only module right now is `math`".into()),
+                        Some("the modules are `math` and `ai`".into()),
                     );
                 }
             }
@@ -679,6 +687,13 @@ impl Checker {
                     Some("add `import math` at the top of your file".into()),
                 );
             }
+            if b.is_ai() && !self.imports.contains("ai") {
+                self.error(
+                    span,
+                    format!("`{}` needs the ai module", name),
+                    Some("add `import ai` at the top of your file".into()),
+                );
+            }
             return Ty::Dynamic; // builtins are handled at their call sites
         }
         self.error(
@@ -797,6 +812,13 @@ impl Checker {
                         Some("add `import math` at the top of your file".into()),
                     );
                 }
+                if b.is_ai() && !self.imports.contains("ai") {
+                    self.error(
+                        span,
+                        format!("`{}` needs the ai module", fname),
+                        Some("add `import ai` at the top of your file".into()),
+                    );
+                }
                 let arg_tys: Vec<Ty> = args.iter().map(|a| self.type_of(a)).collect();
                 return self.builtin_return(b, &arg_tys, span);
             }
@@ -875,8 +897,21 @@ impl Checker {
             Ty::List(elem) => self.list_method(elem, name, span),
             Ty::Text => self.text_method(name, span),
             Ty::Dictionary(k, v) => self.map_method(k, v, name, span),
+            Ty::Network => self.network_method(name, span),
             other => {
                 self.error(span, format!("a {} has no method `{}`", other.describe(), name), None);
+                Ty::Dynamic
+            }
+        }
+    }
+
+    fn network_method(&mut self, name: &str, span: Span) -> Ty {
+        match name {
+            "predict" => Ty::List(Box::new(Ty::Number)),
+            "train" | "train_once" | "loss" | "error" => Ty::Number,
+            "save" => Ty::Nothing,
+            _ => {
+                self.error(span, format!("a neural network has no method `{}`", name), None);
                 Ty::Dynamic
             }
         }
@@ -940,6 +975,7 @@ impl Checker {
             ToNumber | Length | Min | Greatest | Abs | Sqrt | Floor | Ceil | Round | RandomBetween
             | Pow | Clamp | Sin | Cos | Tan | Now | Clock | ScreenWidth | ScreenHeight | MouseX
             | MouseY | LoadSprite | SpriteWidth | SpriteHeight | LoadSound | LoadFont => Ty::Number,
+            NeuralNetwork | LoadNetwork => Ty::Network,
         }
     }
 
@@ -1121,6 +1157,7 @@ fn assignable(from: &Ty, to: &Ty) -> bool {
         | (Ty::Bool, Ty::Bool)
         | (Ty::Nothing, Ty::Nothing) => true,
         (Ty::Class(a), Ty::Class(b)) => a == b,
+        (Ty::Network, Ty::Network) => true,
         (Ty::List(a), Ty::List(b)) => assignable(a, b),
         (Ty::Dictionary(ak, av), Ty::Dictionary(bk, bv)) => assignable(ak, bk) && assignable(av, bv),
         // Into an optional: nothing fits, and the inner type fits.
@@ -1163,6 +1200,7 @@ fn types_equal(a: &Ty, b: &Ty) -> bool {
         | (Ty::Nothing, Ty::Nothing)
         | (Ty::Dynamic, Ty::Dynamic) => true,
         (Ty::Class(x), Ty::Class(y)) => x == y,
+        (Ty::Network, Ty::Network) => true,
         (Ty::List(x), Ty::List(y)) => types_equal(x, y),
         (Ty::Dictionary(xk, xv), Ty::Dictionary(yk, yv)) => types_equal(xk, yk) && types_equal(xv, yv),
         (Ty::Optional(x), Ty::Optional(y)) => types_equal(x, y),

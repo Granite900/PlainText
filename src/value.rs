@@ -25,6 +25,9 @@ pub enum Value {
     List(Rc<RefCell<Vec<Value>>>),
     Dictionary(Rc<RefCell<PtMap>>),
     Class(Rc<RefCell<ClassInstance>>),
+    /// A neural network (from `import ai`). Holds only numbers, so it can't form
+    /// reference cycles and the GC never needs to trace it.
+    Network(Rc<RefCell<crate::nn::Net>>),
     Function(Rc<FunctionObj>),
     /// A method already bound to its receiver, produced by `value.method`.
     BoundMethod { receiver: Box<Value>, func: Rc<FunctionObj> },
@@ -113,6 +116,9 @@ pub enum Builtin {
     // Timers
     After,
     Every,
+    // AI (only usable after `import ai`)
+    NeuralNetwork,
+    LoadNetwork,
 }
 
 impl Builtin {
@@ -169,7 +175,14 @@ impl Builtin {
             Builtin::LoadFont => "load_font",
             Builtin::After => "after",
             Builtin::Every => "every",
+            Builtin::NeuralNetwork => "neural_network",
+            Builtin::LoadNetwork => "load_network",
         }
+    }
+
+    /// Whether this builtin belongs to the `ai` module (`import ai`).
+    pub fn is_ai(self) -> bool {
+        matches!(self, Builtin::NeuralNetwork | Builtin::LoadNetwork)
     }
 
     /// Whether this builtin belongs to the `math` module (only available after
@@ -236,6 +249,8 @@ impl Builtin {
             "load_font" => Builtin::LoadFont,
             "after" => Builtin::After,
             "every" => Builtin::Every,
+            "neural_network" => Builtin::NeuralNetwork,
+            "load_network" => Builtin::LoadNetwork,
             _ => return None,
         })
     }
@@ -261,6 +276,7 @@ impl Value {
                 let _ = t;
                 "class"
             }
+            Value::Network(_) => "neural network",
             Value::Function(_) | Value::BoundMethod { .. } | Value::Builtin(_) => "function",
         }
     }
@@ -297,6 +313,10 @@ impl Value {
                     })
                     .collect();
                 format!("{} {{{}}}", t.def.name, parts.join(", "))
+            }
+            Value::Network(n) => {
+                let n = n.borrow();
+                format!("<neural network {} → {}>", n.inputs(), n.outputs())
             }
             Value::Function(f) => format!("<function {}>", f.decl.name),
             Value::BoundMethod { func, .. } => format!("<method {}>", func.decl.name),

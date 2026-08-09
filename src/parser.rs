@@ -785,16 +785,50 @@ impl Parser {
         let prev = self.restrict_class_literal;
         self.restrict_class_literal = false;
         let result = (|| {
+            // Trailing `name: value` arguments are collected into one options
+            // dictionary passed as the final argument, so calls can read like
+            // `train(examples, answers, epochs: 5000, optimizer: adam)`.
+            let mut options: Vec<(Expr, Expr)> = Vec::new();
+            let mut options_span = Span::new(0, 0);
             loop {
-                args.push(self.parse_expr()?);
+                if let Some((name, span)) = self.peek_keyword_arg() {
+                    self.advance(); // name
+                    self.advance(); // colon
+                    let value = self.parse_expr()?;
+                    options.push((Expr::Text(vec![StrChunk::Lit(name)], span), value));
+                    if options_span.line == 0 {
+                        options_span = span;
+                    }
+                } else if options.is_empty() {
+                    args.push(self.parse_expr()?);
+                } else {
+                    return Err(Diagnostic::new(
+                        self.peek_span(),
+                        "a plain argument can't come after a `name: value` argument",
+                    )
+                    .with_hint("put the `name: value` options last"));
+                }
                 if !self.eat(&TokenKind::Comma) {
                     break;
                 }
+            }
+            if !options.is_empty() {
+                args.push(Expr::DictionaryLit { entries: options, span: options_span });
             }
             Ok(args)
         })();
         self.restrict_class_literal = prev;
         result
+    }
+
+    /// A `name:` at the current position (an argument label), without consuming.
+    fn peek_keyword_arg(&self) -> Option<(String, Span)> {
+        if let TokenKind::Ident(name) = self.peek() {
+            if matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Colon)) {
+                return Some((name.clone(), self.peek_span()));
+            }
+        }
+        None
     }
 
     /// Run `f` with class-literals re-enabled (used inside `(...)` and `[...]`).

@@ -49,9 +49,15 @@ jobs:
             echo "check $f"
             "$BIN" check "$f"
           done
-          "$BIN" run examples/basics.pt
-          "$BIN" run examples/cart.pt
-          "$BIN" run examples/stdlib.pt
-          "$BIN" run examples/list_tools.pt
-          # CPU neural-net smoke test (GPU is optional; falls back if unavailable)
+          # Console examples that run to completion (no window, no stdin, no
+          # forever-timer). Games/UI (bounce, catch, counter, evolve, watch_learn),
+          # ask.pt (stdin) and timers.pt (runs forever) are excluded on purpose.
+          for f in basics cart stdlib list_tools classify remember dataset; do
+            echo "run examples/$f.pt"
+            "$BIN" run "examples/$f.pt"
+          done
+          # Neural-net smoke tests. learn.pt is pure CPU; gpu_learn.pt asks for a
+          # GPU (device: auto) — on the macOS runner that exercises the Metal/MPS
+          # path, and everywhere else it falls back to the CPU with a note.
           "$BIN" run examples/learn.pt
+          "$BIN" run examples/gpu_learn.pt

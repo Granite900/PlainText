@@ -1,7 +1,30 @@
 # The PlainText Language Reference
 
-PlainText is a small language designed to read like plain English. This guide teaches it from
-the ground up. It assumes you can run programs with `plaintext run yourfile.pt`.
+PlainText is a small language designed to read like plain English. This guide is the **full
+lookup** for syntax, types, the standard library, games, and UI.
+
+**New here?** Start with the [lesson path](README.md) instead — then come back when you need
+detail. Keep the [cheatsheet](cheatsheet.md) open while you code.
+
+It assumes you can run programs with `plaintext run yourfile.pt` (version **0.1.2+**).
+
+## Contents
+
+1. [The basics](#1-the-basics)
+2. [Text and interpolation](#2-text-and-interpolation)
+3. [Functions](#3-functions)
+4. [Making decisions](#4-making-decisions)
+5. [Loops](#5-loops)
+6. [Classes](#6-classes-your-own-types)
+7. [Optionals and nothing](#7-optionals-and-nothing)
+8. [Collections](#8-collections)
+9. [Timers](#9-timers)
+10. [Making a game](#10-making-a-game)
+11. [Making a desktop UI](#11-making-a-desktop-ui)
+12. [The standard library at a glance](#12-the-standard-library-at-a-glance)
+13. [Splitting a program across files](#13-splitting-a-program-across-files)
+14. [The REPL](#the-repl)
+15. [Appendix: when do I have to write a type?](#appendix-when-do-i-have-to-write-a-type)
 
 ---
 

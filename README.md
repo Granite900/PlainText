@@ -116,9 +116,11 @@ game "Bounce" (width: 800, height: 600) {
 
 ## Learn the language
 
-1. **[docs/README.md](docs/README.md)** — lesson map (start here)
-2. **[docs/learn/](docs/learn/)** — short teacher-style lessons (hello → games & UI)
-3. **[docs/language-reference.md](docs/language-reference.md)** — full reference when you need details
+1. **[docs/README.md](docs/README.md)** — start here (lesson map)
+2. **[docs/learn/](docs/learn/)** — teacher-style lessons (hello → games & UI)
+3. **[docs/cheatsheet.md](docs/cheatsheet.md)** — one-page syntax reminder
+4. **[docs/language-reference.md](docs/language-reference.md)** — full reference
+5. **[docs/troubleshooting.md](docs/troubleshooting.md)** — common errors (old binary, `import math`, …)
 
 Math helpers require `import math`. Prefer `increase` / `decrease` and word comparisons
 (`is at least`, …) when they make the code clearer.

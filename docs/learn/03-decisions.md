@@ -1,8 +1,12 @@
 # 3. Decisions
 
+**Goal:** Branch with `if` / `else`, and write comparisons that read like English.
+
 ## `if` / `else if` / `else`
 
 ```plaintext
+score = 88
+
 if score is at least 90 {
     print("A")
 } else if score is at least 80 {
@@ -12,9 +16,12 @@ if score is at least 90 {
 }
 ```
 
-Conditions must be a real `Boolean` — write a comparison, not a “truthy” value.
+The condition must be a real `Boolean`. PlainText will not treat a number or string as
+“truthy” — write a comparison.
 
 ## Word comparisons (and symbols)
+
+Both styles mean the same thing. Prefer words when they make the line clearer.
 
 | Words | Symbols |
 |-------|---------|
@@ -22,15 +29,38 @@ Conditions must be a real `Boolean` — write a comparison, not a “truthy” v
 | `is at least` / `is at most` | `>=` / `<=` |
 | `is more than` / `is less than` | `>` / `<` |
 
-Combine with `and`, `or`, `not`.
+Combine with `and`, `or`, and `not`:
 
-## Optionals
+```plaintext
+if ready and lives is more than 0 {
+    print("go")
+}
+```
 
-A value that might be missing is `Text?` (or any type with `?`). Test with
-`is nothing` / `is not nothing` before using it.
+## Values that might be missing
 
-## Try it
+A type with `?` is optional — it can hold a value **or** `nothing`:
 
-See `classify_score` and the `Contact` example in [`examples/basics.pt`](../../examples/basics.pt).
+```plaintext
+nickname: Text? = nothing
 
-**Next:** [Loops →](04-loops.md)
+if nickname is not nothing {
+    print("Also known as {nickname}")
+}
+```
+
+Always check before you use an optional as if it were present.
+
+## Practice
+
+In [`examples/basics.pt`](../../examples/basics.pt), read `classify_score` and the `Contact`
+example. Change a score and re-run to see the letter grade change.
+
+## Common mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| `if score { … }` | Need `if score is more than 0 { … }` |
+| Using an optional without checking | Test `is not nothing` first |
+
+**Previous:** [Variables ←](02-variables-and-text.md) · **Next:** [Loops →](04-loops.md)

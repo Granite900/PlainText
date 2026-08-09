@@ -11,7 +11,7 @@ counter = 0
 btn_face = load_sprite("examples/assets/button.png")
 
 make function called increment() {
-    counter = counter + 1
+    increase counter by 1
 }
 
 make function called decrement() {

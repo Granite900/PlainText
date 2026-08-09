@@ -22,6 +22,10 @@ Check that it works:
 plaintext version
 ```
 
+You want **0.1.2 or newer**. Older binaries will choke on current examples (`import`,
+`increase … by`, and so on). If something weird happens, see
+[docs/troubleshooting.md](docs/troubleshooting.md).
+
 **macOS:** if the system blocks the app the first time, right-click `plaintext` → **Open**,
 or run:
 
@@ -73,9 +77,11 @@ Then reload the window. `.pt` files get syntax highlighting and the PlainText ic
 
 ## 4. Learn the language
 
-- **[docs/README.md](docs/README.md)** — start here (lesson map)
-- **[docs/learn/](docs/learn/)** — short teacher-style lessons (01 → 11)
-- **[Language reference](docs/language-reference.md)** — full guide when you need details
+- **[docs/README.md](docs/README.md)** — start here (lesson map, ~60–90 minutes)
+- **[docs/learn/](docs/learn/)** — teacher-style lessons (01 → 11) with exercises
+- **[docs/cheatsheet.md](docs/cheatsheet.md)** — one-page syntax reminder
+- **[docs/language-reference.md](docs/language-reference.md)** — full lookup guide
+- **[docs/troubleshooting.md](docs/troubleshooting.md)** — common errors and fixes
 - **[examples/](examples/)** — small runnable programs
 
 Useful commands:

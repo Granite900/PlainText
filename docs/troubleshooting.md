@@ -10,7 +10,7 @@ Your `plaintext` binary is **older than the examples**.
 plaintext version
 ```
 
-Examples in this repo need **0.1.2 or newer**. Fix by either:
+Examples in this repo need **2.0.0 or newer**. Fix by either:
 
 - Downloading the [latest release](https://github.com/Granite900/PlainText/releases), **or**
 - From a clone: `cargo install --path . --force`

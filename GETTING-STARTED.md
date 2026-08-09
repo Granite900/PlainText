@@ -22,8 +22,8 @@ Check that it works:
 plaintext version
 ```
 
-You want **0.1.2 or newer**. Older binaries will choke on current examples (`import`,
-`increase … by`, and so on). If something weird happens, see
+You want **2.0.0 or newer**. Older binaries will choke on current examples (`import ai`,
+`increase … by`, `plaintext build`, and so on). If something weird happens, see
 [docs/troubleshooting.md](docs/troubleshooting.md).
 
 **macOS:** if the system blocks the app the first time, right-click `plaintext` → **Open**,

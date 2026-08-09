@@ -1,7 +1,7 @@
 name: Release
 
 # Build Windows + macOS binaries and attach them to a GitHub Release.
-# Trigger: push a version tag (v0.1.1) or run manually from the Actions tab.
+# Trigger: push a version tag (v2.0.0) or run manually from the Actions tab.
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to create/update (e.g. v0.1.1). Leave empty when pushing a tag."
+        description: "Release tag to create/update (e.g. v2.0.0). Leave empty when pushing a tag."
         required: false
         default: ""
 

@@ -53,3 +53,5 @@ jobs:
           "$BIN" run examples/cart.pt
           "$BIN" run examples/stdlib.pt
           "$BIN" run examples/list_tools.pt
+          # CPU neural-net smoke test (GPU is optional; falls back if unavailable)
+          "$BIN" run examples/learn.pt

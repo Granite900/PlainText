@@ -156,7 +156,7 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v0.1.2`, …) are built for **Windows + macOS** by GitHub Actions
+(`v2.0.0`, …) are built for **Windows + macOS** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## How it works

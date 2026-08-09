@@ -1,0 +1,20 @@
+// Training from a data file instead of typing examples out by hand.
+// The CSV in examples/data/circle.csv has 300 rows of  x, y, inside  — points
+// labelled 1 if they fall inside a circle, 0 if not. load_dataset reads them.
+// Run from the repo root with:  plaintext run examples/dataset.pt
+
+import ai
+import math   // for round()
+
+// outputs: 1  → the last column is the answer, the rest are inputs.
+// (The header row of column names is skipped automatically.)
+data = load_dataset("examples/data/circle.csv", outputs: 1)
+examples = data[0]
+answers  = data[1]
+print("loaded {examples.length()} examples from the file")
+
+brain = neural_network(inputs: 2, hidden: [12, 12], outputs: 1)
+brain.train(examples, answers, epochs: 1500, optimizer: adam, rate: 0.05)
+
+print("center (0.5, 0.5) -> {round(brain.predict([0.5, 0.5])[0], 3)}")   // near 1 (inside)
+print("corner (0.0, 0.0) -> {round(brain.predict([0.0, 0.0])[0], 3)}")   // near 0 (outside)

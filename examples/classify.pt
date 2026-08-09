@@ -47,5 +47,5 @@ repeat 300 times {
 }
 
 print("accuracy on new points: {correct} / 300")
-print("center (0.5, 0.5) looks like: {brain.predict([0.5, 0.5])[0]}")   // near 1 (inside)
-print("corner (0.0, 0.0) looks like: {brain.predict([0.0, 0.0])[0]}")   // near 0 (outside)
+print("center (0.5, 0.5) looks like: {round(brain.predict([0.5, 0.5])[0], 3)}")   // near 1 (inside)
+print("corner (0.0, 0.0) looks like: {round(brain.predict([0.0, 0.0])[0], 3)}")   // near 0 (outside)

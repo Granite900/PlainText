@@ -83,6 +83,8 @@ pub enum Builtin {
     WriteFile,
     AppendFile,
     FileExists,
+    ReadCsv,
+    LoadDataset,
     // Time
     Now,
     Clock,
@@ -119,6 +121,9 @@ pub enum Builtin {
     // AI (only usable after `import ai`)
     NeuralNetwork,
     LoadNetwork,
+    Population,
+    Evolve,
+    BestOf,
 }
 
 impl Builtin {
@@ -147,6 +152,8 @@ impl Builtin {
             Builtin::WriteFile => "write_file",
             Builtin::AppendFile => "append_file",
             Builtin::FileExists => "file_exists",
+            Builtin::ReadCsv => "read_csv",
+            Builtin::LoadDataset => "load_dataset",
             Builtin::Now => "now",
             Builtin::Clock => "clock",
             Builtin::ClearScreen => "clear_screen",
@@ -177,12 +184,18 @@ impl Builtin {
             Builtin::Every => "every",
             Builtin::NeuralNetwork => "neural_network",
             Builtin::LoadNetwork => "load_network",
+            Builtin::Population => "population",
+            Builtin::Evolve => "evolve",
+            Builtin::BestOf => "best_of",
         }
     }
 
     /// Whether this builtin belongs to the `ai` module (`import ai`).
     pub fn is_ai(self) -> bool {
-        matches!(self, Builtin::NeuralNetwork | Builtin::LoadNetwork)
+        matches!(
+            self,
+            Builtin::NeuralNetwork | Builtin::LoadNetwork | Builtin::Population | Builtin::Evolve | Builtin::BestOf
+        )
     }
 
     /// Whether this builtin belongs to the `math` module (only available after
@@ -221,6 +234,8 @@ impl Builtin {
             "write_file" => Builtin::WriteFile,
             "append_file" => Builtin::AppendFile,
             "file_exists" => Builtin::FileExists,
+            "read_csv" => Builtin::ReadCsv,
+            "load_dataset" => Builtin::LoadDataset,
             "now" => Builtin::Now,
             "clock" => Builtin::Clock,
             "clear_screen" => Builtin::ClearScreen,
@@ -251,6 +266,9 @@ impl Builtin {
             "every" => Builtin::Every,
             "neural_network" => Builtin::NeuralNetwork,
             "load_network" => Builtin::LoadNetwork,
+            "population" => Builtin::Population,
+            "evolve" => Builtin::Evolve,
+            "best_of" => Builtin::BestOf,
             _ => return None,
         })
     }

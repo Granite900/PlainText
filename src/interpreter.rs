@@ -1689,7 +1689,20 @@ impl Interpreter {
                 }
                 Ok(Value::Number(acc))
             }
-            Builtin::Abs | Builtin::Sqrt | Builtin::Floor | Builtin::Ceil | Builtin::Round => {
+            Builtin::Round => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(Diagnostic::new(span, "round takes a number and an optional number of decimal places")
+                        .with_hint("round(3.14159) → 3, or round(3.14159, 2) → 3.14"));
+                }
+                let n = self.as_number(&args[0], span)?;
+                let places = match args.get(1) {
+                    Some(v) => self.as_number(v, span)?.max(0.0) as i32,
+                    None => 0,
+                };
+                let factor = 10f64.powi(places);
+                Ok(Value::Number((n * factor).round() / factor))
+            }
+            Builtin::Abs | Builtin::Sqrt | Builtin::Floor | Builtin::Ceil => {
                 self.expect_arity(b.name(), &args, 1, span)?;
                 let n = self.as_number(&args[0], span)?;
                 let r = match b {
@@ -1702,7 +1715,6 @@ impl Interpreter {
                     }
                     Builtin::Floor => n.floor(),
                     Builtin::Ceil => n.ceil(),
-                    Builtin::Round => n.round(),
                     _ => unreachable!(),
                 };
                 Ok(Value::Number(r))
@@ -1770,6 +1782,43 @@ impl Interpreter {
                 self.expect_arity("file_exists", &args, 1, span)?;
                 let path = self.as_text(&args[0], span)?;
                 Ok(Value::Bool(std::path::Path::new(&path).exists()))
+            }
+            Builtin::ReadCsv => {
+                self.expect_arity("read_csv", &args, 1, span)?;
+                let path = self.as_text(&args[0], span)?;
+                let rows = self.read_csv_rows(&path, span)?;
+                let list: Vec<Value> = rows
+                    .into_iter()
+                    .map(|row| self.new_list(row.into_iter().map(Value::Number).collect()))
+                    .collect();
+                Ok(self.new_list(list))
+            }
+            Builtin::LoadDataset => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(Diagnostic::new(span, "load_dataset takes a file path and optional settings")
+                        .with_hint("e.g. load_dataset(\"data.csv\", outputs: 1)"));
+                }
+                let path = self.as_text(&args[0], span)?;
+                let outputs = self.opt_number(args.get(1), "outputs", 1.0, span)?.max(1.0) as usize;
+                let rows = self.read_csv_rows(&path, span)?;
+                let mut examples: Vec<Value> = Vec::with_capacity(rows.len());
+                let mut answers: Vec<Value> = Vec::with_capacity(rows.len());
+                for (i, row) in rows.iter().enumerate() {
+                    if row.len() <= outputs {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("row {} has {} value(s), too few for {} output(s) plus at least one input", i + 1, row.len(), outputs),
+                        ));
+                    }
+                    let split = row.len() - outputs;
+                    let inputs: Vec<Value> = row[..split].iter().map(|&n| Value::Number(n)).collect();
+                    let outs: Vec<Value> = row[split..].iter().map(|&n| Value::Number(n)).collect();
+                    examples.push(self.new_list(inputs));
+                    answers.push(self.new_list(outs));
+                }
+                let ex = self.new_list(examples);
+                let an = self.new_list(answers);
+                Ok(self.new_list(vec![ex, an]))
             }
             Builtin::Now => {
                 self.expect_arity("now", &args, 0, span)?;
@@ -2005,7 +2054,129 @@ impl Interpreter {
                         .with_hint("is it a file saved with a network's .save(...)?")),
                 }
             }
+            Builtin::Population => {
+                let o = args.first();
+                let count = positive_size(self.opt_number(o, "count", 0.0, span)?, span, "the population size")?;
+                let inputs = positive_size(self.opt_number(o, "inputs", 0.0, span)?, span, "the number of inputs")?;
+                let outputs = positive_size(self.opt_number(o, "outputs", 0.0, span)?, span, "the number of outputs")?;
+                let mut sizes = vec![inputs];
+                sizes.extend(self.hidden_sizes(dict_get(o, "hidden").as_ref(), span)?);
+                sizes.push(outputs);
+                let mut brains = Vec::with_capacity(count);
+                for _ in 0..count {
+                    self.next_rand(); // a different starting brain each time
+                    let net = crate::nn::Net::new(sizes.clone(), self.rng_state.get());
+                    brains.push(Value::Network(Rc::new(RefCell::new(net))));
+                }
+                Ok(self.new_list(brains))
+            }
+            Builtin::Evolve => {
+                if args.len() < 2 || args.len() > 3 {
+                    return Err(Diagnostic::new(span, "evolve takes brains, scores, and optional settings")
+                        .with_hint("e.g. evolve(brains, scores, mutation: 0.1, keep: 2)"));
+                }
+                let brains = self.as_network_list(&args[0], span)?;
+                let scores = self.as_number_row(&args[1], span)?;
+                if brains.len() != scores.len() {
+                    return Err(Diagnostic::new(
+                        span,
+                        format!("got {} brains but {} scores — there must be one score per brain", brains.len(), scores.len()),
+                    ));
+                }
+                let opts = args.get(2);
+                let mutation = self.opt_number(opts, "mutation", 0.1, span)?;
+                let keep = self.opt_number(opts, "keep", 1.0, span)?.max(0.0) as usize;
+                let nets: Vec<crate::nn::Net> = brains.iter().map(|b| b.borrow().clone()).collect();
+                self.next_rand();
+                let seed = self.rng_state.get();
+                let next = crate::nn::evolve(&nets, &scores, mutation, keep, seed);
+                let list: Vec<Value> = next
+                    .into_iter()
+                    .map(|n| Value::Network(Rc::new(RefCell::new(n))))
+                    .collect();
+                Ok(self.new_list(list))
+            }
+            Builtin::BestOf => {
+                self.expect_arity("best_of", &args, 2, span)?;
+                let brains = self.as_network_list(&args[0], span)?;
+                let scores = self.as_number_row(&args[1], span)?;
+                if brains.is_empty() || brains.len() != scores.len() {
+                    return Err(Diagnostic::new(span, "best_of needs a non-empty population and one score per brain"));
+                }
+                let mut best = 0;
+                for i in 1..scores.len() {
+                    if scores[i] > scores[best] {
+                        best = i;
+                    }
+                }
+                Ok(Value::Network(brains[best].clone()))
+            }
         }
+    }
+
+    /// Read a `Value::List` of networks (a population) into their handles.
+    fn as_network_list(&self, v: &Value, span: Span) -> Result<Vec<Rc<RefCell<crate::nn::Net>>>, Diagnostic> {
+        match v {
+            Value::List(l) => l
+                .borrow()
+                .iter()
+                .map(|item| match item {
+                    Value::Network(n) => Ok(n.clone()),
+                    other => Err(Diagnostic::new(
+                        span,
+                        format!("a population should hold networks, but found a {}", other.type_name()),
+                    )),
+                })
+                .collect(),
+            other => Err(Diagnostic::new(
+                span,
+                format!("expected a population (a list of networks), got a {}", other.type_name()),
+            )),
+        }
+    }
+
+    /// Parse a CSV/whitespace-separated numeric file into rows of numbers,
+    /// skipping blank lines, `#` comments, and a single non-numeric header row.
+    fn read_csv_rows(&self, path: &str, span: Span) -> Result<Vec<Vec<f64>>, Diagnostic> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| Diagnostic::new(span, format!("couldn't read file \"{}\": {}", path, e)))?;
+        let mut rows: Vec<Vec<f64>> = Vec::new();
+        for (i, raw) in text.lines().enumerate() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let fields: Vec<&str> = line.split([',', ';', '\t', ' ']).filter(|s| !s.is_empty()).collect();
+            let mut row = Vec::with_capacity(fields.len());
+            let mut ok = true;
+            for f in &fields {
+                match f.parse::<f64>() {
+                    Ok(n) => row.push(n),
+                    Err(_) => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if !ok {
+                // Tolerate a header, but only as the first data-bearing line.
+                if rows.is_empty() {
+                    continue;
+                }
+                return Err(Diagnostic::new(
+                    span,
+                    format!("line {} of \"{}\" has a value that isn't a number", i + 1, path),
+                ));
+            }
+            if !row.is_empty() {
+                rows.push(row);
+            }
+        }
+        if rows.is_empty() {
+            return Err(Diagnostic::new(span, format!("found no data rows in \"{}\"", path))
+                .with_hint("each line should be numbers separated by commas"));
+        }
+        Ok(rows)
     }
 
     fn gfx_or_err(&self, span: Span) -> Result<Rc<RefCell<GfxBridge>>, Diagnostic> {

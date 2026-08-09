@@ -1,0 +1,139 @@
+// Neuroevolution — a population of little dots that LEARN to reach the goal.
+// No training data and no backprop: each dot is driven by its own neural
+// network, the ones that get closest to the goal get to "breed", and the next
+// generation is a little better. Watch the generation counter climb.
+// Run with:  plaintext run examples/evolve.pt
+
+import math   // sqrt, clamp
+import ai      // population, evolve, best_of
+
+count = 120
+start_x = 400
+start_y = 540
+goal_x = 400
+goal_y = 70
+life_span = 6          // seconds each generation gets to try
+
+// One dot: position, velocity, and whether it's still going / has arrived.
+class Dot {
+    x = 400
+    y = 540
+    vx = 0
+    vy = 0
+    alive = true
+    done = false
+}
+
+make function called fresh_dots() {
+    dots: Dot list = []
+    repeat count times {
+        dots.append(Dot { x: start_x, y: start_y })
+    }
+    return dots
+}
+
+// Each dot gets its own brain: it senses the goal + its own speed, and steers.
+brains = population(count: count, inputs: 4, hidden: [8], outputs: 2)
+dots = fresh_dots()
+generation = 1
+timer = 0
+best_distance = 9999
+
+make function called distance_to_goal(dot) {
+    dx = goal_x - dot.x
+    dy = goal_y - dot.y
+    return sqrt(dx * dx + dy * dy)
+}
+
+// Turn this generation's results into the next one.
+make function called next_generation() {
+    scores: Number list = []
+    best_distance = 9999
+    i = 0
+    while i < count {
+        dot = dots[i]
+        d = distance_to_goal(dot)
+        if d < best_distance {
+            best_distance = d
+        }
+        // Closer is better; a big bonus for actually reaching the goal.
+        s = 1000 / (d + 1)
+        if dot.done {
+            s = s + 1000
+        }
+        scores.append(s)
+        increase i by 1
+    }
+    brains = evolve(brains, scores, mutation: 0.1, keep: 8)
+    dots = fresh_dots()
+    timer = 0
+    increase generation by 1
+}
+
+game "Neuroevolution — dots learning to reach the goal" (width: 800, height: 600) {
+
+    on update(delta) {
+        increase timer by delta
+        if timer >= life_span {
+            next_generation()
+            return
+        }
+
+        i = 0
+        while i < count {
+            dot = dots[i]
+            if dot.alive and not dot.done {
+                // Senses: direction to the goal and current velocity, scaled to
+                // roughly -1..1 so the network sees tidy numbers.
+                dx = (goal_x - dot.x) / 800
+                dy = (goal_y - dot.y) / 600
+                senses = [dx, dy, dot.vx / 300, dot.vy / 300]
+
+                // The brain steers: two outputs (0..1) become a push in x and y.
+                move = brains[i].predict(senses)
+                push_x = move[0] * 2 - 1
+                push_y = move[1] * 2 - 1
+
+                increase dot.vx by push_x * 700 * delta
+                increase dot.vy by push_y * 700 * delta
+                dot.vx = clamp(dot.vx, -260, 260)
+                dot.vy = clamp(dot.vy, -260, 260)
+
+                increase dot.x by dot.vx * delta
+                increase dot.y by dot.vy * delta
+
+                if distance_to_goal(dot) < 18 {
+                    dot.done = true
+                }
+                if dot.x < 0 or dot.x > 800 or dot.y < 0 or dot.y > 600 {
+                    dot.alive = false
+                }
+            }
+            increase i by 1
+        }
+    }
+
+    on draw() {
+        clear_screen(rgb(18, 20, 32))
+
+        // The goal.
+        draw_circle(goal_x, goal_y, 16, gold)
+
+        // Every dot: green if it made it, grey if it crashed, white if trying.
+        i = 0
+        while i < count {
+            dot = dots[i]
+            color = white
+            if dot.done {
+                color = green
+            } else if not dot.alive {
+                color = gray
+            }
+            draw_circle(dot.x, dot.y, 4, color)
+            increase i by 1
+        }
+
+        draw_text("Generation {generation}", 20, 20, 26, white)
+        draw_text("Closest this run: {floor(best_distance)}", 20, 52, 20, gold)
+    }
+}

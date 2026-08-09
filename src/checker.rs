@@ -975,7 +975,11 @@ impl Checker {
             ToNumber | Length | Min | Greatest | Abs | Sqrt | Floor | Ceil | Round | RandomBetween
             | Pow | Clamp | Sin | Cos | Tan | Now | Clock | ScreenWidth | ScreenHeight | MouseX
             | MouseY | LoadSprite | SpriteWidth | SpriteHeight | LoadSound | LoadFont => Ty::Number,
-            NeuralNetwork | LoadNetwork => Ty::Network,
+            NeuralNetwork | LoadNetwork | BestOf => Ty::Network,
+            Population | Evolve => Ty::List(Box::new(Ty::Network)),
+            // read_csv → rows of numbers; load_dataset → [examples, answers].
+            ReadCsv => Ty::List(Box::new(Ty::List(Box::new(Ty::Number)))),
+            LoadDataset => Ty::List(Box::new(Ty::List(Box::new(Ty::List(Box::new(Ty::Number)))))),
         }
     }
 

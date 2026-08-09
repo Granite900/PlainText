@@ -2,6 +2,7 @@
 // Run with:  plaintext run examples/gpu_learn.pt
 
 import ai
+import math   // for round(), to tidy up the printed numbers
 
 // device: picks where training runs. Options:
 //   auto  — any GPU the machine has (falls back to the CPU if none)
@@ -18,5 +19,5 @@ final_error = brain.train(examples, answers, epochs: 4000, optimizer: adam, rate
 print("final error: {final_error}")
 
 for every pair in examples {
-    print("{pair} -> {brain.predict(pair)}")
+    print("{pair} -> {round(brain.predict(pair)[0], 3)}")
 }

@@ -50,6 +50,7 @@ pub struct TrainCfg {
 
 /// A fully-connected layer: `out * in` weights (row-major, `w[o*in + i]`), one
 /// bias per output, plus per-weight optimizer state.
+#[derive(Clone)]
 struct Layer {
     inn: usize,
     outn: usize,
@@ -87,6 +88,7 @@ impl Layer {
     }
 }
 
+#[derive(Clone)]
 pub struct Net {
     sizes: Vec<usize>,
     layers: Vec<Layer>,
@@ -442,6 +444,105 @@ fn step(w: f64, g: f64, opt: Opt, rate: f64, m: &mut f64, v: &mut f64, t: f64, b
             w - rate * m_hat / (v_hat.sqrt() + eps)
         }
     }
+}
+
+// ---- neuroevolution ------------------------------------------------------
+//
+// Instead of training with backprop, breed a *population* of networks: keep the
+// best, and fill the next generation with children that mix two parents' weights
+// (crossover) and jiggle them a little (mutation). Fitness is whatever score the
+// program measures — how far an agent got, how long it survived — so a network
+// can learn to play a game without any labelled data.
+
+impl Net {
+    /// Wipe optimizer state so a bred/copied network starts clean.
+    fn reset_all(&mut self) {
+        for layer in &mut self.layers {
+            layer.reset_state();
+        }
+        self.opt = None;
+        self.t = 0.0;
+        self.epochs = 0.0;
+    }
+
+    /// A child whose every weight/bias is taken from one of two parents at random.
+    fn crossover(a: &Net, b: &Net, rng: &Cell<u64>) -> Net {
+        let mut child = a.clone();
+        for (l, layer) in child.layers.iter_mut().enumerate() {
+            if l >= b.layers.len() {
+                break;
+            }
+            let bl = &b.layers[l];
+            for i in 0..layer.w.len().min(bl.w.len()) {
+                if rand_unit(rng) < 0.5 {
+                    layer.w[i] = bl.w[i];
+                }
+            }
+            for o in 0..layer.b.len().min(bl.b.len()) {
+                if rand_unit(rng) < 0.5 {
+                    layer.b[o] = bl.b[o];
+                }
+            }
+        }
+        child.reset_all();
+        child
+    }
+
+    /// Nudge every weight/bias by a small random amount.
+    fn mutate(&mut self, strength: f64, rng: &Cell<u64>) {
+        for layer in &mut self.layers {
+            for w in layer.w.iter_mut().chain(layer.b.iter_mut()) {
+                *w += (rand_unit(rng) * 2.0 - 1.0) * strength;
+            }
+        }
+    }
+}
+
+/// Breed the next generation from a scored population. Returns a new set of
+/// networks the same size as the input: the top `keep` carried over unchanged
+/// (elitism), the rest bred from fitness-weighted parents and mutated.
+pub fn evolve(nets: &[Net], scores: &[f64], mutation: f64, keep: usize, seed: u64) -> Vec<Net> {
+    let n = nets.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let rng = Cell::new(seed | 1);
+
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| scores[b].partial_cmp(&scores[a]).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Roulette weights: shift so the worst still has a small chance.
+    let min = scores.iter().cloned().fold(f64::INFINITY, f64::min);
+    let weights: Vec<f64> = scores.iter().map(|s| (s - min) + 1e-6).collect();
+    let total: f64 = weights.iter().sum();
+
+    let mut next: Vec<Net> = Vec::with_capacity(n);
+    let keep = keep.min(n);
+    for &i in order.iter().take(keep) {
+        let mut elite = nets[i].clone();
+        elite.reset_all();
+        next.push(elite);
+    }
+    while next.len() < n {
+        let pa = roulette(&weights, total, &rng);
+        let pb = roulette(&weights, total, &rng);
+        let mut child = Net::crossover(&nets[pa], &nets[pb], &rng);
+        child.mutate(mutation, &rng);
+        next.push(child);
+    }
+    next
+}
+
+/// Pick an index with probability proportional to its weight.
+fn roulette(weights: &[f64], total: f64, rng: &Cell<u64>) -> usize {
+    let mut r = rand_unit(rng) * total;
+    for (i, &w) in weights.iter().enumerate() {
+        r -= w;
+        if r <= 0.0 {
+            return i;
+        }
+    }
+    weights.len() - 1
 }
 
 fn sigmoid(x: f64) -> f64 {

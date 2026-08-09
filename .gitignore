@@ -11,6 +11,7 @@ smoke_err.txt
 smoke_out.txt
 *.pdb
 *.ai
+/dist-smoke/
 
 # Editor / OS
 .DS_Store

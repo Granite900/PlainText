@@ -24,6 +24,15 @@ const BUTTON_HOVER: Color = Color(90, 145, 245, 255);
 const BUTTON_TEXT: Color = Color(255, 255, 255, 255);
 const BTN_PAD_X: f32 = 16.0;
 const BTN_PAD_Y: f32 = 10.0;
+// Shared accent/field theme for the interactive widgets.
+const ACCENT: Color = Color(70, 120, 220, 255);
+const FIELD_BG: Color = Color(255, 255, 255, 255);
+const FIELD_BORDER: Color = Color(170, 170, 180, 255);
+const TRACK: Color = Color(200, 200, 208, 255);
+const FIELD_H: f32 = 34.0;
+const FIELD_W: f32 = 220.0;
+const BOX: f32 = 22.0; // checkbox square side
+const SLIDER_H: f32 = 24.0;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum UiKind {
@@ -32,6 +41,10 @@ pub enum UiKind {
     Text,
     Button,
     Spacer,
+    TextField,
+    Checkbox,
+    Slider,
+    Image,
 }
 
 #[derive(Clone, Copy)]
@@ -73,10 +86,22 @@ pub struct UiNode {
     pub props: UiProps,
     pub children: Vec<UiNode>,
     pub callback: Option<Value>,
-    /// Optional sprite drawn as the button face (stretched to the button rect).
+    /// Optional sprite drawn as the button/image face (stretched to the rect).
     pub sprite: Option<usize>,
     /// Optional custom font id from `load_font`.
     pub font: Option<usize>,
+    // Interactive-widget state (read from the program's variables each frame):
+    /// Checkbox on/off.
+    pub checked: bool,
+    /// Slider current value and its range/step.
+    pub number: f32,
+    pub min: f32,
+    pub max: f32,
+    pub step: f32,
+    /// `on_change` handler for text_field / checkbox / slider.
+    pub on_change: Option<Value>,
+    /// Name of a variable to write back to (the `bind:` shorthand).
+    pub bind: Option<String>,
     // Filled in by layout:
     pub x: f32,
     pub y: f32,
@@ -94,6 +119,13 @@ impl UiNode {
             callback: None,
             sprite: None,
             font: None,
+            checked: false,
+            number: 0.0,
+            min: 0.0,
+            max: 100.0,
+            step: 1.0,
+            on_change: None,
+            bind: None,
             x: 0.0,
             y: 0.0,
             w: 0.0,
@@ -102,13 +134,34 @@ impl UiNode {
     }
 }
 
-/// A laid-out clickable region.
-pub struct Button {
+/// What kind of interactive region a [`Control`] is, so the window runner knows
+/// how to respond to input.
+#[derive(Clone, Copy, PartialEq)]
+pub enum ControlKind {
+    Button,
+    Checkbox,
+    Slider,
+    TextField,
+}
+
+/// A laid-out interactive region: a button, checkbox, slider, or text field.
+/// The window runner hit-tests these against the mouse/keyboard and writes any
+/// change back to the program (via `bind` and/or `callback`).
+pub struct Control {
     pub x: f32,
     pub y: f32,
     pub w: f32,
     pub h: f32,
-    pub callback: Value,
+    pub kind: ControlKind,
+    /// Button `on_click`, or `on_change` for the stateful widgets.
+    pub callback: Option<Value>,
+    pub bind: Option<String>,
+    pub checked: bool,
+    pub number: f32,
+    pub min: f32,
+    pub max: f32,
+    pub step: f32,
+    pub text: String,
 }
 
 /// Approximate width of a string in Raylib's default font at `size`. Raylib
@@ -157,6 +210,25 @@ fn measure(node: &mut UiNode) {
         UiKind::Spacer => {
             node.w = p.width.unwrap_or(0.0);
             node.h = p.height.unwrap_or(0.0);
+        }
+        UiKind::TextField => {
+            node.w = p.width.unwrap_or(FIELD_W);
+            node.h = p.height.unwrap_or(FIELD_H);
+        }
+        UiKind::Checkbox => {
+            let label = node.text.as_deref().unwrap_or("");
+            let label_w = if label.is_empty() { 0.0 } else { 8.0 + text_width(label, p.font_size) };
+            node.w = p.width.unwrap_or(BOX + label_w);
+            node.h = p.height.unwrap_or(BOX.max(p.font_size as f32));
+        }
+        UiKind::Slider => {
+            node.w = p.width.unwrap_or(FIELD_W);
+            node.h = p.height.unwrap_or(SLIDER_H);
+        }
+        UiKind::Image => {
+            // Defaults are filled from the sprite's natural size by the builder.
+            node.w = p.width.unwrap_or(64.0);
+            node.h = p.height.unwrap_or(64.0);
         }
         UiKind::Column => {
             let n = node.children.len();
@@ -214,15 +286,110 @@ fn position(node: &mut UiNode, x: f32, y: f32) {
     }
 }
 
-/// Walk the laid-out tree, emitting draw commands and collecting buttons.
-pub fn collect(roots: &[UiNode], mouse: (f32, f32), out: &mut Vec<DrawCmd>, buttons: &mut Vec<Button>) {
+/// Walk the laid-out tree, emitting draw commands and collecting interactive
+/// controls. `focused` is the index (into `controls`) of the text field that
+/// currently has keyboard focus, so it can be drawn with a caret.
+pub fn collect(
+    roots: &[UiNode],
+    mouse: (f32, f32),
+    focused: Option<usize>,
+    out: &mut Vec<DrawCmd>,
+    controls: &mut Vec<Control>,
+) {
     for n in roots {
-        draw_node(n, mouse, out, buttons);
+        draw_node(n, mouse, focused, out, controls);
     }
 }
 
-fn draw_node(node: &UiNode, mouse: (f32, f32), out: &mut Vec<DrawCmd>, buttons: &mut Vec<Button>) {
+fn draw_node(
+    node: &UiNode,
+    mouse: (f32, f32),
+    focused: Option<usize>,
+    out: &mut Vec<DrawCmd>,
+    controls: &mut Vec<Control>,
+) {
     match node.kind {
+        UiKind::TextField => {
+            let idx = controls.len();
+            let is_focused = focused == Some(idx);
+            // Border (accent when focused), then the field background inset by 2px.
+            let border = if is_focused { ACCENT } else { FIELD_BORDER };
+            out.push(DrawCmd::Rect { x: node.x, y: node.y, w: node.w, h: node.h, color: border });
+            out.push(DrawCmd::Rect {
+                x: node.x + 2.0, y: node.y + 2.0, w: node.w - 4.0, h: node.h - 4.0, color: FIELD_BG,
+            });
+            let t = node.text.clone().unwrap_or_default();
+            // Keep the visible string inside the field so long input doesn't spill.
+            let max_chars = ((node.w - 16.0) / (node.props.font_size as f32 * 0.5)).floor().max(0.0) as usize;
+            let shown = if t.chars().count() > max_chars {
+                t.chars().skip(t.chars().count() - max_chars).collect::<String>()
+            } else {
+                t.clone()
+            };
+            let ty = node.y + (node.h - node.props.font_size as f32) / 2.0;
+            out.push(DrawCmd::Text {
+                text: shown.clone(), x: node.x + 8.0, y: ty, size: node.props.font_size,
+                color: node.props.color.unwrap_or(TEXT_COLOR), font: node.font,
+            });
+            if is_focused {
+                let caret_x = node.x + 8.0 + text_width(&shown, node.props.font_size) + 1.0;
+                out.push(DrawCmd::Line {
+                    x1: caret_x, y1: node.y + 6.0, x2: caret_x, y2: node.y + node.h - 6.0,
+                    thick: 1.5, color: TEXT_COLOR,
+                });
+            }
+            controls.push(Control {
+                x: node.x, y: node.y, w: node.w, h: node.h, kind: ControlKind::TextField,
+                callback: node.on_change.clone(), bind: node.bind.clone(),
+                checked: false, number: 0.0, min: 0.0, max: 0.0, step: 0.0, text: t,
+            });
+        }
+        UiKind::Checkbox => {
+            let box_y = node.y + (node.h - BOX) / 2.0;
+            out.push(DrawCmd::Rect { x: node.x, y: box_y, w: BOX, h: BOX, color: FIELD_BORDER });
+            out.push(DrawCmd::Rect {
+                x: node.x + 2.0, y: box_y + 2.0, w: BOX - 4.0, h: BOX - 4.0, color: FIELD_BG,
+            });
+            if node.checked {
+                out.push(DrawCmd::Rect {
+                    x: node.x + 5.0, y: box_y + 5.0, w: BOX - 10.0, h: BOX - 10.0, color: ACCENT,
+                });
+            }
+            if let Some(label) = &node.text {
+                out.push(DrawCmd::Text {
+                    text: label.clone(), x: node.x + BOX + 8.0,
+                    y: node.y + (node.h - node.props.font_size as f32) / 2.0,
+                    size: node.props.font_size, color: node.props.color.unwrap_or(TEXT_COLOR),
+                    font: node.font,
+                });
+            }
+            controls.push(Control {
+                x: node.x, y: node.y, w: node.w, h: node.h, kind: ControlKind::Checkbox,
+                callback: node.on_change.clone(), bind: node.bind.clone(),
+                checked: node.checked, number: 0.0, min: 0.0, max: 0.0, step: 0.0, text: String::new(),
+            });
+        }
+        UiKind::Slider => {
+            let cy = node.y + node.h / 2.0;
+            let range = (node.max - node.min).max(0.0001);
+            let frac = ((node.number - node.min) / range).clamp(0.0, 1.0);
+            let knob_x = node.x + frac * node.w;
+            // Track, then the filled portion, then the knob.
+            out.push(DrawCmd::Rect { x: node.x, y: cy - 3.0, w: node.w, h: 6.0, color: TRACK });
+            out.push(DrawCmd::Rect { x: node.x, y: cy - 3.0, w: knob_x - node.x, h: 6.0, color: ACCENT });
+            out.push(DrawCmd::Circle { x: knob_x, y: cy, r: node.h / 2.0, color: ACCENT });
+            controls.push(Control {
+                x: node.x, y: node.y, w: node.w, h: node.h, kind: ControlKind::Slider,
+                callback: node.on_change.clone(), bind: node.bind.clone(),
+                checked: false, number: node.number, min: node.min, max: node.max,
+                step: node.step, text: String::new(),
+            });
+        }
+        UiKind::Image => {
+            if let Some(id) = node.sprite {
+                out.push(DrawCmd::SpriteRect { id, x: node.x, y: node.y, w: node.w, h: node.h });
+            }
+        }
         UiKind::Text => {
             out.push(DrawCmd::Text {
                 text: node.text.clone().unwrap_or_default(),
@@ -271,7 +438,11 @@ fn draw_node(node: &UiNode, mouse: (f32, f32), out: &mut Vec<DrawCmd>, buttons: 
                 font: node.font,
             });
             if let Some(cb) = &node.callback {
-                buttons.push(Button { x: node.x, y: node.y, w: node.w, h: node.h, callback: cb.clone() });
+                controls.push(Control {
+                    x: node.x, y: node.y, w: node.w, h: node.h, kind: ControlKind::Button,
+                    callback: Some(cb.clone()), bind: None, checked: false, number: 0.0,
+                    min: 0.0, max: 0.0, step: 0.0, text: String::new(),
+                });
             }
         }
         UiKind::Spacer => {}
@@ -280,7 +451,7 @@ fn draw_node(node: &UiNode, mouse: (f32, f32), out: &mut Vec<DrawCmd>, buttons: 
                 out.push(DrawCmd::Rect { x: node.x, y: node.y, w: node.w, h: node.h, color: bg });
             }
             for child in &node.children {
-                draw_node(child, mouse, out, buttons);
+                draw_node(child, mouse, focused, out, controls);
             }
         }
     }

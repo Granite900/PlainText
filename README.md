@@ -31,7 +31,7 @@ backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 
 - **Reads like English.** `make function called`, `for every item in items`, `repeat 3 times`.
 - **Catches mistakes early.** A real type checker, but inference means you almost never write a type.
-- **Games & UIs built in.** `game { on update … on draw … }` and `window { column { button … } }`, drawn natively.
+- **Games & UIs built in.** `game { on update … on draw … }` and `window { column { button … text_field … } }`, drawn natively.
 - **Batteries included.** Math, lists (map/filter/fold-style tools), dictionaries, text, files, time, timers, and console input out of the box.
 - **Train a neural network.** `import ai`, then `neural_network(...)`, `.train(...)`, `.predict(...)` — even watch it learn live in a game window, or train on a GPU (`device: auto`, covering NVIDIA / AMD / Apple).
 - **Ship a single app.** `plaintext build game.pt` bundles your program into a standalone executable (Windows or macOS).
@@ -117,6 +117,7 @@ game "Bounce" (width: 800, height: 600) {
 | [`examples/spawner.pt`](examples/spawner.pt) | timers driving a game (spawning objects) |
 | [`examples/catch.pt`](examples/catch.pt)     | a **complete** arcade game — score, lives, game over, restart |
 | [`examples/counter.pt`](examples/counter.pt) | a **complete** desktop UI — buttons and a live label |
+| [`examples/form.pt`](examples/form.pt)       | settings form — `text_field`, `checkbox`, `slider`, `image`, `bind:` |
 | [`examples/learn.pt`](examples/learn.pt)     | `import ai` — train a neural network to learn XOR |
 | [`examples/classify.pt`](examples/classify.pt) | a real task — learn "is this point inside a circle?" and score accuracy |
 | [`examples/remember.pt`](examples/remember.pt) | `save` a trained network and `load_network` it back |
@@ -159,7 +160,7 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v2.2.0`, …) are built for **Windows + macOS** by GitHub Actions
+(`v2.4.0`, …) are built for **Windows + macOS** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## How it works

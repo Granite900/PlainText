@@ -8,10 +8,16 @@ print(greeting)
 nums = [5, 3, 8, 1, 4, 2]
 
 // Each of these returns a NEW list (or value); `nums` is left alone.
+// The function can be passed by name (from the toolbox), or written inline
+// with `make function (...) { ... }` right where you need it.
 print("sorted:      {nums.sorted()}")
-print("doubled:     {nums.transformed_by(double)}")
-print("evens only:  {nums.kept_if(is_even)}")
+print("doubled:     {nums.transformed_by(make function (n) { return n * 2 })}")
+print("evens only:  {nums.kept_if(make function (n) { return n % 2 is 0 })}")
 print("sum:         {nums.combined(0, add)}")
+
+// An inline function closes over the variables around it — `bonus` is captured.
+bonus = 100
+print("boosted:     {nums.transformed_by(make function (n) { return n + bonus })}")
 
 words = ["pear", "apple", "fig", "cherry"]
 print("sorted words: {words.sorted()}")

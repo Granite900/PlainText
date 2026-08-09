@@ -23,6 +23,18 @@ Useful methods:
 | `kept_if(fn)` | Keep items where `fn` returns true |
 | `combined(start, fn)` | Fold / reduce into one value |
 
+The last three take a **function**. Pass one by name, or write it inline with
+`make function (...) { ... }`:
+
+```plaintext
+nums = [5, 3, 8, 1]
+print(nums.transformed_by(make function (n) { return n * 2 }))   // [10, 6, 16, 2]
+print(nums.kept_if(make function (n) { return n is more than 3 }))   // [5, 8]
+print(nums.combined(0, make function (a, b) { return a + b }))   // 17
+```
+
+See [Functions → without a name](05-functions.md) for more on inline functions.
+
 Empty lists need a type, because there is nothing to infer from:
 
 ```plaintext

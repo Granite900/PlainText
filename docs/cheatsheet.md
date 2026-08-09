@@ -42,6 +42,9 @@ if score is at least 90 {
 
 Also: `and`, `or`, `not`. Optionals: `value is nothing` / `is not nothing`.
 
+Recover from failure: `count = try to_number(text) otherwise 0` — `try` turns a would-be crash
+into `nothing`; `otherwise` supplies a default (also works on `list.first()`, `dict[key]`, …).
+
 ## Loops
 
 ```plaintext
@@ -57,6 +60,8 @@ loop { if done { break } }
 make function called add(a: Number, b: Number) {
     return a + b
 }
+
+double = make function (n) { return n * 2 }   // inline/anonymous — a function value
 
 class Player {
     name: Text
@@ -127,9 +132,16 @@ Input: `key_down` / `key_pressed` (`"up"`, `"space"`, `"w"`, …), `mouse_x()`, 
 ## UI (sketch)
 
 ```plaintext
-window "Title" (width: 420, height: 260) {
-    column (padding: 24, spacing: 12, align: center) {
+name = ""
+volume = 50
+
+window "Title" (width: 420, height: 320) {
+    column (padding: 24, spacing: 12, align: left) {
         text "Clicked {n} times" (size: 24)
+        text_field (bind: name, width: 280)
+        checkbox "Notify me" (bind: subscribed)
+        slider (bind: volume, min: 0, max: 100, step: 1, width: 280)
+        image (sprite: logo, width: 64, height: 64)
         button "More" (on_click: increment)
     }
 }

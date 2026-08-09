@@ -247,9 +247,13 @@ impl Interpreter {
             "text" => UiKind::Text,
             "button" => UiKind::Button,
             "spacer" => UiKind::Spacer,
+            "text_field" => UiKind::TextField,
+            "checkbox" => UiKind::Checkbox,
+            "slider" => UiKind::Slider,
+            "image" => UiKind::Image,
             other => {
                 return Err(Diagnostic::new(w.span, format!("unknown widget `{}`", other))
-                    .with_hint("widgets are column, row, text, button, spacer"));
+                    .with_hint("widgets are column, row, text, button, spacer, text_field, checkbox, slider, image"));
             }
         };
         let mut node = UiNode::new(kind);
@@ -257,14 +261,60 @@ impl Interpreter {
             node.text = Some(self.eval(label, scope)?.display());
         }
         for (name, expr) in &w.props {
+            // `bind:` names a variable to read from and write back to; it needs
+            // the identifier itself, not just its current value.
+            if name == "bind" {
+                let var = match expr {
+                    Expr::Ident(n, _) => n.clone(),
+                    _ => {
+                        return Err(Diagnostic::new(expr.span(), "bind needs a variable name")
+                            .with_hint("write bind: myVariable"));
+                    }
+                };
+                let v = self.eval(expr, scope)?;
+                node.bind = Some(var);
+                self.set_widget_value(&mut node, v, expr.span())?;
+                continue;
+            }
             let v = self.eval(expr, scope)?;
             self.apply_widget_prop(&mut node, name, v, expr.span())?;
+        }
+        // An image with no explicit size takes the sprite's natural size.
+        if node.kind == UiKind::Image {
+            if let (Some(id), Some(gfx)) = (node.sprite, &self.gfx) {
+                if let Some((sw, sh)) = gfx.borrow().sprite_sizes.get(&id).copied() {
+                    node.props.width.get_or_insert(sw as f32);
+                    node.props.height.get_or_insert(sh as f32);
+                }
+            }
         }
         for child in &w.children {
             let c = self.build_widget(child, scope)?;
             node.children.push(c);
         }
         Ok(node)
+    }
+
+    /// Set an interactive widget's current value from a bound/`value:` prop,
+    /// routed by the widget's kind.
+    fn set_widget_value(&self, node: &mut UiNode, v: Value, span: Span) -> Result<(), Diagnostic> {
+        match node.kind {
+            UiKind::Checkbox => {
+                node.checked = match v {
+                    Value::Bool(b) => b,
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("a checkbox holds a true/false value, got a {}", other.type_name()),
+                        ));
+                    }
+                };
+            }
+            UiKind::Slider => node.number = self.as_number(&v, span)? as f32,
+            UiKind::TextField => node.text = Some(v.display()),
+            _ => {}
+        }
+        Ok(())
     }
 
     fn apply_widget_prop(&self, node: &mut UiNode, name: &str, v: Value, span: Span) -> Result<(), Diagnostic> {
@@ -276,6 +326,17 @@ impl Interpreter {
             "height" => node.props.height = Some(self.as_number(&v, span)? as f32),
             "color" => node.props.color = Some(self.as_color(&v, span)?),
             "bg" | "background" => node.props.bg = Some(self.as_color(&v, span)?),
+            "value" | "checked" => self.set_widget_value(node, v, span)?,
+            "min" => node.min = self.as_number(&v, span)? as f32,
+            "max" => node.max = self.as_number(&v, span)? as f32,
+            "step" => node.step = self.as_number(&v, span)? as f32,
+            "on_change" => {
+                if !is_callable(&v) {
+                    return Err(Diagnostic::new(span, "on_change needs a function")
+                        .with_hint("pass a function, e.g. on_change: make function (new) { name = new }"));
+                }
+                node.on_change = Some(v);
+            }
             "sprite" => {
                 let id = self.as_number(&v, span)?;
                 if id < 0.0 || id.fract() != 0.0 {
@@ -330,6 +391,17 @@ impl Interpreter {
     pub fn call_callback(&mut self, callback: &Value) -> Result<(), Diagnostic> {
         self.call_value(callback.clone(), Vec::new(), Span::new(0, 0))?;
         Ok(())
+    }
+
+    /// Call an `on_change` handler with the widget's new value.
+    pub fn call_on_change(&mut self, callback: &Value, arg: Value) -> Result<(), Diagnostic> {
+        self.call_value(callback.clone(), vec![arg], Span::new(0, 0))?;
+        Ok(())
+    }
+
+    /// Write a widget's new value back to the variable named by its `bind:`.
+    pub fn assign_var(&self, scope: &Env, name: &str, value: Value) {
+        env_set(scope, name, value);
     }
 
     /// Run one lifecycle hook (start/update/draw), binding its parameters.
@@ -680,6 +752,26 @@ impl Interpreter {
                 let is_nothing = matches!(v, Value::Nothing);
                 Ok(Value::Bool(is_nothing != *negated))
             }
+            Expr::Try { expr, .. } => {
+                // Catch a real runtime error and turn it into `nothing`. An
+                // `exit(...)` request (carried as a diagnostic) is never caught —
+                // it must still stop the program.
+                match self.eval(expr, env) {
+                    Ok(v) => Ok(v),
+                    Err(d) if d.exit.is_some() => Err(d),
+                    Err(_) => Ok(Value::Nothing),
+                }
+            }
+            Expr::Otherwise { value, fallback, .. } => {
+                // The value's own errors are NOT caught here (use `try` for that);
+                // `otherwise` only supplies a default when the value is `nothing`.
+                let v = self.eval(value, env)?;
+                if matches!(v, Value::Nothing) {
+                    self.eval(fallback, env)
+                } else {
+                    Ok(v)
+                }
+            }
             Expr::ListLit { items, .. } => {
                 let mut values = Vec::with_capacity(items.len());
                 for item in items {
@@ -708,6 +800,10 @@ impl Interpreter {
                 self.eval_index(obj, idx, *span)
             }
             Expr::Call { callee, args, span } => self.eval_call(callee, args, env, *span),
+            Expr::Function { decl, .. } => Ok(Value::Function(Rc::new(FunctionObj {
+                decl: decl.clone(),
+                closure: env.clone(),
+            }))),
             Expr::Wait { span, .. } => Err(Diagnostic::new(
                 *span,
                 "`wait`/`start` aren't part of PlainText",

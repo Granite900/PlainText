@@ -156,30 +156,104 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
     // Assets queued during top-level setup (load_sprite / load_font).
     load_pending(&mut rl, &thread, None, &bridge, &mut textures, &mut Vec::new(), &mut fonts);
 
+    // UI state that lives across frames but not in the program: which text field
+    // has keyboard focus, and which slider (if any) is being dragged. These are
+    // indices into the per-frame `controls` list, which is stable as long as the
+    // widget tree keeps the same shape.
+    let mut focused: Option<usize> = None;
+    let mut dragging: Option<usize> = None;
+
     while !rl.window_should_close() {
         sync_input(&mut bridge.borrow_mut(), &rl);
         load_pending(&mut rl, &thread, None, &bridge, &mut textures, &mut Vec::new(), &mut fonts);
-        let (mouse, pressed) = {
+
+        // Text typed this frame (must be drained even when nothing is focused,
+        // so it doesn't pile up in Raylib's queue).
+        let mut typed = String::new();
+        while let Some(ch) = rl.get_char_pressed() {
+            typed.push(ch);
+        }
+        let backspace = rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE)
+            || rl.is_key_pressed_repeat(KeyboardKey::KEY_BACKSPACE);
+
+        let (mouse, pressed, down) = {
             let b = bridge.borrow();
-            ((b.mouse_x, b.mouse_y), b.mouse_pressed)
+            ((b.mouse_x, b.mouse_y), b.mouse_pressed, b.mouse_down)
         };
 
         // Rebuild the widget tree from current state, lay it out, collect draw
-        // commands and clickable regions.
+        // commands and interactive controls.
         let mut nodes = interp.build_widgets(&window.root, &scope)?;
         ui::layout_root(&mut nodes, width, height);
         let mut cmds = Vec::new();
-        let mut buttons = Vec::new();
-        ui::collect(&nodes, mouse, &mut cmds, &mut buttons);
+        let mut controls = Vec::new();
+        ui::collect(&nodes, mouse, focused, &mut cmds, &mut controls);
 
-        // A click fires the topmost button under the cursor (its handler runs
-        // and the change shows on the next frame's rebuild).
+        if !down {
+            dragging = None;
+        }
+
+        // A press dispatches to the topmost control under the cursor and (re)sets
+        // keyboard focus. Any change is written back to the program, so it shows
+        // on the next frame's rebuild.
         if pressed {
-            if let Some(btn) = buttons.iter().rev().find(|b| {
-                mouse.0 >= b.x && mouse.0 <= b.x + b.w && mouse.1 >= b.y && mouse.1 <= b.y + b.h
-            }) {
-                let cb = btn.callback.clone();
-                interp.call_callback(&cb)?;
+            focused = None;
+            let hit = controls
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, c)| point_in(mouse, c))
+                .map(|(i, _)| i);
+            if let Some(i) = hit {
+                match controls[i].kind {
+                    ui::ControlKind::Button => {
+                        if let Some(cb) = controls[i].callback.clone() {
+                            interp.call_callback(&cb)?;
+                        }
+                    }
+                    ui::ControlKind::TextField => focused = Some(i),
+                    ui::ControlKind::Checkbox => {
+                        let new_val = !controls[i].checked;
+                        write_back(&mut interp, &scope, &controls[i], Value::Bool(new_val))?;
+                    }
+                    ui::ControlKind::Slider => {
+                        dragging = Some(i);
+                        if let Some(v) = slider_value(&controls[i], mouse.0) {
+                            write_back(&mut interp, &scope, &controls[i], Value::Number(v))?;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Continue a slider drag while the mouse is held.
+        if down {
+            if let Some(i) = dragging {
+                if let Some(c) = controls.get(i) {
+                    if c.kind == ui::ControlKind::Slider {
+                        if let Some(v) = slider_value(c, mouse.0) {
+                            if (v as f32 - c.number).abs() > f32::EPSILON {
+                                write_back(&mut interp, &scope, c, Value::Number(v))?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Feed typed text / backspace to the focused field.
+        if let Some(i) = focused {
+            if let Some(c) = controls.get(i) {
+                if c.kind == ui::ControlKind::TextField && (!typed.is_empty() || backspace) {
+                    let mut s = c.text.clone();
+                    if backspace {
+                        s.pop();
+                    }
+                    s.push_str(&typed);
+                    write_back(&mut interp, &scope, c, Value::text(s))?;
+                }
+            } else {
+                focused = None;
             }
         }
 
@@ -190,6 +264,41 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
         }
     }
     Ok(())
+}
+
+/// Write a control's new value back to the program: to its bound variable (if
+/// any) and through its `on_change` handler (if any).
+fn write_back(
+    interp: &mut Interpreter,
+    scope: &crate::value::Env,
+    control: &ui::Control,
+    value: Value,
+) -> Result<(), Diagnostic> {
+    if let Some(name) = &control.bind {
+        interp.assign_var(scope, name, value.clone());
+    }
+    if let Some(cb) = &control.callback {
+        interp.call_on_change(cb, value)?;
+    }
+    Ok(())
+}
+
+/// Map a mouse x-position to a slider's value, snapped to its step and clamped
+/// to its range. Returns `None` if the slider has no width.
+fn slider_value(c: &ui::Control, mouse_x: f32) -> Option<f64> {
+    if c.w <= 0.0 {
+        return None;
+    }
+    let frac = ((mouse_x - c.x) / c.w).clamp(0.0, 1.0);
+    let mut v = c.min + frac * (c.max - c.min);
+    if c.step > 0.0 {
+        v = (v / c.step).round() * c.step;
+    }
+    Some(v.clamp(c.min, c.max) as f64)
+}
+
+fn point_in(p: (f32, f32), c: &ui::Control) -> bool {
+    p.0 >= c.x && p.0 <= c.x + c.w && p.1 >= c.y && p.1 <= c.y + c.h
 }
 
 fn render(

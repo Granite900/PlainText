@@ -321,6 +321,8 @@ impl Lexer {
             "game" => TokenKind::Game,
             "window" => TokenKind::Window,
             "on" => TokenKind::On,
+            "try" => TokenKind::Try,
+            "otherwise" => TokenKind::Otherwise,
             _ => TokenKind::Ident(text),
         };
         Token::new(kind, span)

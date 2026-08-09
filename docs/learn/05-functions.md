@@ -36,6 +36,36 @@ make function called total_cost(items) {
 
 Prefer real types when you can — the checker catches more mistakes.
 
+## Functions without a name
+
+Sometimes you need a *tiny* function just to hand to something else — no reason to name it.
+Write it inline with `make function (...) { ... }` (the same shape as a named function, minus
+`called <name>`):
+
+```plaintext
+nums = [5, 3, 8, 1]
+doubled = nums.transformed_by(make function (n) { return n * 2 })
+evens = nums.kept_if(make function (n) { return n % 2 is 0 })
+```
+
+An inline function **remembers the variables around it** — it can use names from the scope
+where you wrote it:
+
+```plaintext
+bonus = 100
+boosted = nums.transformed_by(make function (n) { return n + bonus })
+```
+
+You can also store one in a variable and call it later, just like a named function:
+
+```plaintext
+triple = make function (n) { return n * 3 }
+print(triple(7))    // 21
+```
+
+These are handy for [collections](07-collections.md) (`transformed_by`, `kept_if`,
+`combined`), button `on_click` handlers, and `after`/`every` timers.
+
 ## Practice
 
 Open [`examples/cart.pt`](../../examples/cart.pt). It defines an `Item` class and a

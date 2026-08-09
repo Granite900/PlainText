@@ -5,5 +5,12 @@ name = input("What is your name? ")
 print("Nice to meet you, {name}!")
 
 age_text = input("How old are you? ")
-age = to_number(age_text)
-print("Next year you will be {age + 1}.")
+
+// to_number stops the program if the text isn't a number. `try` catches that
+// and gives back `nothing` instead, so we can handle a bad answer gracefully.
+age = try to_number(age_text)
+if age is not nothing {
+    print("Next year you will be {age + 1}.")
+} else {
+    print("That's not a number I recognize — but nice to meet you anyway!")
+}

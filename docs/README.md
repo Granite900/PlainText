@@ -34,7 +34,7 @@ About **60–90 minutes** if you try every exercise.
 | 8 | [Math and the toolbox](learn/08-math-and-tools.md) | `import math`, `input`, `exit` |
 | 9 | [Modules](learn/09-modules.md) | Splitting a program across files |
 | 10 | [Games](learn/10-games.md) | `game`, update/draw, sprites, input |
-| 11 | [Desktop UI](learn/11-ui.md) | `window`, buttons, layout |
+| 11 | [Desktop UI](learn/11-ui.md) | `window`, buttons, forms (`text_field` / `checkbox` / `slider`) |
 | 12 | [Neural networks](learn/12-neural-networks.md) | `import ai`, train / predict, datasets, GPU, neuroevolution |
 
 Every example under [`examples/`](../examples/) is meant to be readable — steal from them freely.

@@ -14,8 +14,8 @@ PlainText isn't on the VS Code Marketplace yet. Install it from this folder:
 
 Copy this `vscode` folder into your VS Code extensions directory, then reload VS Code:
 
-- Windows: `%USERPROFILE%\.vscode\extensions\plaintext.plaintext-lang-2.2.0`
-- macOS / Linux: `~/.vscode/extensions/plaintext.plaintext-lang-2.2.0`
+- Windows: `%USERPROFILE%\.vscode\extensions\plaintext.plaintext-lang-2.4.0`
+- macOS / Linux: `~/.vscode/extensions/plaintext.plaintext-lang-2.4.0`
 
 **Option B — package a .vsix** (needs Node.js)
 
@@ -23,7 +23,7 @@ Copy this `vscode` folder into your VS Code extensions directory, then reload VS
 npm install -g @vscode/vsce
 cd editors/vscode
 vsce package --allow-missing-repository
-code --install-extension plaintext-lang-2.2.0.vsix
+code --install-extension plaintext-lang-2.4.0.vsix
 ```
 
 Or install `plaintext-lang.vsix` from a [GitHub release](https://github.com/Granite900/PlainText/releases) zip.

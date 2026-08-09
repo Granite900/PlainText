@@ -46,7 +46,7 @@ Check that it works:
 plaintext version
 ```
 
-You want **2.2.0 or newer**. Older binaries will choke on current examples (`import ai`,
+You want **2.4.0 or newer**. Older binaries will choke on current examples (`import ai`,
 `increase … by`, `plaintext build`, and so on). If something weird happens, see
 [docs/troubleshooting.md](docs/troubleshooting.md).
 

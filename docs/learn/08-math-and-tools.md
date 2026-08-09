@@ -31,6 +31,25 @@ print("Next year: {age + 1}")
 
 `input` always returns `Text`. Convert with `to_number` when you need a `Number`.
 
+## When something can fail
+
+`to_number` stops the whole program if the text isn't a number. Wrap it in **`try`** to get
+`nothing` back instead, then supply a default with **`otherwise`** — or check it yourself:
+
+```plaintext
+age = try to_number(input("How old are you? ")) otherwise 0
+
+// or handle the bad case explicitly:
+maybe = try to_number(answer)
+if maybe is nothing {
+    print("That wasn't a number.")
+}
+```
+
+`try` rescues other failures too — a missing file (`read_file`), an out-of-range index — turning
+them into `nothing` rather than a crash. It never swallows an `exit()`. See
+[`examples/ask.pt`](../../examples/ask.pt).
+
 ## Stopping with `exit`
 
 ```plaintext

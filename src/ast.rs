@@ -6,6 +6,8 @@
 // lands. Silence the "never read" warnings until then.
 #![allow(dead_code)]
 
+use std::rc::Rc;
+
 use crate::token::Span;
 
 /// A whole `.pt` file: a flat list of top-level statements.
@@ -192,6 +194,17 @@ pub enum Expr {
         negated: bool,
         span: Span,
     },
+    /// `try expr` — evaluate `expr`, yielding `nothing` if it would error.
+    Try {
+        expr: Box<Expr>,
+        span: Span,
+    },
+    /// `value otherwise fallback` — use `fallback` when `value` is `nothing`.
+    Otherwise {
+        value: Box<Expr>,
+        fallback: Box<Expr>,
+        span: Span,
+    },
 
     /// A function call: `callee(args)`.
     Call {
@@ -227,6 +240,13 @@ pub enum Expr {
         span: Span,
     },
 
+    /// An anonymous function value: `make function (params) { body }`.
+    /// Captures the scope it's written in, so it closes over enclosing locals.
+    Function {
+        decl: Rc<FunctionDecl>,
+        span: Span,
+    },
+
     /// `wait <expr>` — evaluates in this milestone as a no-op placeholder
     /// (the async runtime arrives in a later milestone).
     Wait {
@@ -247,12 +267,15 @@ impl Expr {
             | Expr::Unary { span: s, .. }
             | Expr::Binary { span: s, .. }
             | Expr::IsNothing { span: s, .. }
+            | Expr::Try { span: s, .. }
+            | Expr::Otherwise { span: s, .. }
             | Expr::Call { span: s, .. }
             | Expr::Field { span: s, .. }
             | Expr::Index { span: s, .. }
             | Expr::ListLit { span: s, .. }
             | Expr::DictionaryLit { span: s, .. }
             | Expr::ClassLit { span: s, .. }
+            | Expr::Function { span: s, .. }
             | Expr::Wait { span: s, .. } => *s,
         }
     }

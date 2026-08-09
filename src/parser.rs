@@ -3,6 +3,8 @@
 //! It consumes the [`Token`] stream from the lexer and produces the [`ast`]
 //! tree. Newlines act as statement terminators; blank lines are ignored.
 
+use std::rc::Rc;
+
 use crate::ast::*;
 use crate::diagnostics::Diagnostic;
 use crate::lexer::Lexer;
@@ -208,6 +210,22 @@ impl Parser {
         self.expect(TokenKind::RParen, "`)` after parameters")?;
         let body = self.parse_block()?;
         Ok(FunctionDecl { name, is_async, params, body, span })
+    }
+
+    /// An anonymous function used as a value: `make function (params) { body }`
+    /// — the same shape as a named function, minus `called <name>`. Handy for
+    /// passing a short function to `transformed_by`, `on_click`, `after`, etc.
+    fn parse_anon_function(&mut self, span: Span) -> Result<Expr, Diagnostic> {
+        self.expect(TokenKind::Make, "`make`")?;
+        let is_async = self.eat(&TokenKind::Async);
+        self.expect(TokenKind::Function, "`function`")?;
+        // Anonymous: no `called <name>` — the parentheses come next.
+        self.expect(TokenKind::LParen, "`(` before parameters")?;
+        let params = self.parse_params()?;
+        self.expect(TokenKind::RParen, "`)` after parameters")?;
+        let body = self.parse_block()?;
+        let decl = FunctionDecl { name: "anonymous".to_string(), is_async, params, body, span };
+        Ok(Expr::Function { decl: Rc::new(decl), span })
     }
 
     fn parse_params(&mut self) -> Result<Vec<Param>, Diagnostic> {
@@ -579,7 +597,18 @@ impl Parser {
     // ---- expressions (precedence climbing) -------------------------------
 
     fn parse_expr(&mut self) -> Result<Expr, Diagnostic> {
-        self.parse_or()
+        self.parse_otherwise()
+    }
+
+    // Lowest precedence: `value otherwise fallback`, so it wraps everything else.
+    fn parse_otherwise(&mut self) -> Result<Expr, Diagnostic> {
+        let mut left = self.parse_or()?;
+        while self.check(&TokenKind::Otherwise) {
+            let span = self.advance().span;
+            let right = self.parse_or()?;
+            left = Expr::Otherwise { value: Box::new(left), fallback: Box::new(right), span };
+        }
+        Ok(left)
     }
 
     fn parse_or(&mut self) -> Result<Expr, Diagnostic> {
@@ -745,6 +774,11 @@ impl Parser {
                 self.eat(&TokenKind::Seconds); // optional duration unit
                 Ok(Expr::Wait { expr: Box::new(expr), span })
             }
+            TokenKind::Try => {
+                let span = self.advance().span;
+                let expr = self.parse_unary()?;
+                Ok(Expr::Try { expr: Box::new(expr), span })
+            }
             _ => self.parse_postfix(),
         }
     }
@@ -883,6 +917,7 @@ impl Parser {
             }
             TokenKind::LBracket => self.parse_list_literal(span),
             TokenKind::Dictionary => self.parse_dictionary_literal(span),
+            TokenKind::Make => self.parse_anon_function(span),
             other => Err(Diagnostic::new(
                 span,
                 format!("expected a value, found {}", describe(&other)),

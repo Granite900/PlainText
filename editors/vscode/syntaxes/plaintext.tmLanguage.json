@@ -97,7 +97,7 @@
         },
         {
           "name": "keyword.control.flow.pt",
-          "match": "\\b(wait|start|increase|decrease)\\b"
+          "match": "\\b(wait|start|increase|decrease|try)\\b"
         },
         {
           "name": "storage.type.pt",
@@ -105,11 +105,11 @@
         },
         {
           "name": "keyword.operator.word.pt",
-          "match": "\\b(and|or|not|is|by)\\b"
+          "match": "\\b(and|or|not|is|by|otherwise)\\b"
         },
         {
           "name": "keyword.other.pt",
-          "match": "\\b(every|list|dictionary|of|to|import)\\b"
+          "match": "\\b(every|list|dictionary|of|to|import|column|row|text|button|spacer|text_field|checkbox|slider|image)\\b"
         },
         {
           "name": "support.constant.pt",

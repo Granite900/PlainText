@@ -1,0 +1,45 @@
+// A little settings form: a text field, a checkbox, a slider, an image, and a
+// button that prints what you entered. Run with:  plaintext run examples/form.pt
+//
+// The form's state lives in ordinary variables. Each input widget uses
+// `bind:` to read from and write back to one of them, so `submit` can just
+// read the variables.
+
+name = ""
+subscribed = false
+volume = 50
+
+logo = load_sprite("examples/assets/button.png")
+
+make function called submit() {
+    print("--- your settings ---")
+    print("Name:       {name}")
+    print("Subscribed: {subscribed}")
+    print("Volume:     {volume}")
+}
+
+window "Settings" (width: 460, height: 440, bg: white) {
+    column (padding: 28, spacing: 14, align: left) {
+        text "Your details" (size: 26)
+
+        image (sprite: logo, width: 72, height: 40)
+
+        text "Name"
+        text_field (bind: name, width: 320)
+
+        checkbox "Subscribe to updates" (bind: subscribed)
+
+        text "Volume: {volume}"
+        slider (bind: volume, min: 0, max: 100, step: 1, width: 320)
+
+        spacer (height: 6)
+        button "Submit" (on_click: submit)
+    }
+}
+
+// Prefer to react as the value changes? Use `on_change` with an inline
+// function instead of (or together with) `bind`, e.g.:
+//   text_field (
+//       value: name,
+//       on_change: make function (new) { name = new }
+//   )

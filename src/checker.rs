@@ -470,18 +470,56 @@ impl Checker {
     }
 
     fn check_widget(&mut self, w: &Widget) {
+        const WIDGETS: &[&str] = &[
+            "column", "row", "text", "button", "spacer", "text_field", "checkbox", "slider", "image",
+        ];
+        if !WIDGETS.contains(&w.name.as_str()) {
+            self.error(
+                w.span,
+                format!("unknown widget `{}`", w.name),
+                Some("widgets are column, row, text, button, spacer, text_field, checkbox, slider, image".into()),
+            );
+        }
         if let Some(label) = &w.label {
             self.type_of(label);
         }
+        let mut has_bind = false;
+        let mut has_value = false;
         for (name, expr) in &w.props {
+            if name == "bind" {
+                has_bind = true;
+                // `bind:` needs the variable's name, not an expression.
+                if !matches!(expr, Expr::Ident(_, _)) {
+                    self.error(
+                        expr.span(),
+                        "bind needs a variable name".into(),
+                        Some("write bind: myVariable".into()),
+                    );
+                } else {
+                    self.type_of(expr); // still resolve it so unknown names error
+                }
+                continue;
+            }
+            if name == "value" || name == "checked" {
+                has_value = true;
+            }
             let t = self.type_of(expr);
-            if name == "on_click" && !matches!(t, Ty::Function(_) | Ty::Dynamic) {
+            if (name == "on_click" || name == "on_change") && !matches!(t, Ty::Function(_) | Ty::Dynamic) {
                 self.error(
                     expr.span(),
-                    format!("on_click needs a function, but this is a {}", t.describe()),
-                    Some("pass a function by name, e.g. on_click: handle_click".into()),
+                    format!("{} needs a function, but this is a {}", name, t.describe()),
+                    Some("pass a function, e.g. on_change: make function (new) { name = new }".into()),
                 );
             }
+        }
+        // Interactive inputs rebuild from your variables each frame — without
+        // `bind:` or `value:`/`checked:`, typed clicks have nowhere to stick.
+        if matches!(w.name.as_str(), "text_field" | "checkbox" | "slider") && !has_bind && !has_value {
+            self.error(
+                w.span,
+                format!("`{}` needs bind: or value: so its state can stick", w.name),
+                Some("example: text_field (bind: name, width: 320)".into()),
+            );
         }
         for child in &w.children {
             self.check_widget(child);
@@ -628,6 +666,35 @@ impl Checker {
                 self.type_of(expr);
                 Ty::Bool
             }
+            Expr::Try { expr, .. } => {
+                // `try e` yields `nothing` on failure, so its type gains a `?`.
+                match self.type_of(expr) {
+                    Ty::Dynamic => Ty::Dynamic,
+                    already @ Ty::Optional(_) => already,
+                    other => Ty::Optional(Box::new(other)),
+                }
+            }
+            Expr::Otherwise { value, fallback, span } => {
+                let lt = self.type_of(value);
+                let ft = self.type_of(fallback);
+                if matches!(lt, Ty::Dynamic) || matches!(ft, Ty::Dynamic) {
+                    return Ty::Dynamic;
+                }
+                // The value's `?` is discharged; the result is its inner type,
+                // reconciled with the fallback.
+                let inner = match lt {
+                    Ty::Optional(inner) => *inner,
+                    other => other,
+                };
+                join(&inner, &ft).unwrap_or_else(|| {
+                    self.error(
+                        *span,
+                        format!("the `otherwise` fallback is a {}, but the value is a {}", ft.describe(), inner.describe()),
+                        Some("make the fallback the same type as the value".into()),
+                    );
+                    inner
+                })
+            }
             Expr::ListLit { items, .. } => {
                 let mut elem: Option<Ty> = None;
                 for it in items {
@@ -668,11 +735,29 @@ impl Checker {
                 self.index_access(&obj, &idx, *span)
             }
             Expr::Call { callee, args, span } => self.type_of_call(callee, args, *span),
+            Expr::Function { decl, .. } => self.type_of_lambda(decl),
             Expr::Wait { expr, .. } => {
                 self.type_of(expr);
                 Ty::Dynamic
             }
         }
+    }
+
+    /// Type an anonymous function, checking its body inline so errors inside it
+    /// are reported. The body closes over the current scopes, matching how the
+    /// interpreter captures the enclosing environment. Its return type is left
+    /// unresolved (`sig.id` is `None`), so calling it yields `Dynamic` — good
+    /// enough for v1, where lambdas are mostly passed to list/UI helpers.
+    fn type_of_lambda(&mut self, decl: &Rc<FunctionDecl>) -> Ty {
+        let sig = Rc::new(self.build_sig(None, decl));
+        self.scopes.push(HashMap::new());
+        for (p, ty) in decl.params.iter().zip(sig.params.iter()) {
+            self.declare(&p.name, ty.clone());
+        }
+        let mut returns = Vec::new();
+        self.check_block(&decl.body, &mut returns);
+        self.scopes.pop();
+        Ty::Function(sig)
     }
 
     fn type_of_ident(&mut self, name: &str, span: Span) -> Ty {

@@ -6,7 +6,7 @@ lookup** for syntax, types, the standard library, games, and UI.
 **New here?** Start with the [lesson path](README.md) instead — then come back when you need
 detail. Keep the [cheatsheet](cheatsheet.md) open while you code.
 
-It assumes you can run programs with `plaintext run yourfile.pt` (version **2.2.0+**).
+It assumes you can run programs with `plaintext run yourfile.pt` (version **2.4.0+**).
 
 ## Contents
 
@@ -143,6 +143,32 @@ make function called total_cost(items) {         // `items` is flexible
     return total
 }
 ```
+
+### Anonymous (inline) functions
+
+A function you don't need to name is written `make function (<parameters>) { <body> }` — the
+same shape as a named one, minus `called <name>`. It's a **value**: pass it straight to
+something, or store it in a variable.
+
+```plaintext
+nums = [5, 3, 8, 1]
+doubled = nums.transformed_by(make function (n) { return n * 2 })
+
+triple = make function (n) { return n * 3 }
+print(triple(7))    // 21
+```
+
+An inline function **closes over** its surroundings — it can read variables from the scope
+where it was written:
+
+```plaintext
+bonus = 100
+boosted = nums.transformed_by(make function (n) { return n + bonus })
+```
+
+Typical uses: the list helpers `transformed_by` / `kept_if` / `combined` (§8), a button's
+`on_click` (§11), and `after` / `every` timers (§9). Parameter types are optional here too —
+leave them off for a flexible parameter.
 
 ---
 
@@ -295,6 +321,38 @@ if c.nickname is not nothing {
 
 Use `is nothing` and `is not nothing` to test.
 
+### Handling things that can fail
+
+Some operations can fail: a file might be missing, text might not be a number, an index might be
+out of range. By default those stop the program. Two small words let you recover, both built on
+`nothing`:
+
+- **`try expr`** runs `expr` and gives back `nothing` if it would have failed (instead of stopping).
+  Its type gains a `?`, so you handle it like any optional.
+- **`value otherwise fallback`** uses `fallback` whenever `value` is `nothing`.
+
+```plaintext
+// Give a default when something fails:
+notes = try read_file("notes.txt") otherwise "no notes yet"
+count = try to_number(answer) otherwise 0
+
+// Or branch on the failure:
+saved = try load_network("brain.ai")
+if saved is nothing {
+    print("No saved brain — starting fresh.")
+    saved = neural_network(inputs: 2, hidden: [8], outputs: 1)
+}
+```
+
+`otherwise` also works on anything that already returns an optional, no `try` needed:
+
+```plaintext
+best = scores.first() otherwise 0
+rate = settings["speed"] otherwise 1
+```
+
+(`try` only catches genuine failures — it never swallows an `exit(...)`.)
+
 ---
 
 ## 8. Collections
@@ -335,6 +393,13 @@ print(nums.combined(0, add))        // 17              — fold everything into 
 
 `sorted` works on a list of all numbers or all text. `combined(start, f)` calls `f(running, item)`
 for each item, beginning from `start`.
+
+The function can be passed by name (as above) or written inline (§3) — often shorter:
+
+```plaintext
+print(nums.transformed_by(make function (n) { return n * 2 }))
+print(nums.kept_if(make function (n) { return n % 2 is 0 }))
+```
 
 ### Dictionaries
 
@@ -497,6 +562,34 @@ window "Counter" (width: 420, height: 260, bg: rgb(24, 28, 40)) {
 - `text "..."` — a label (interpolation works).
 - `button "..."` — clickable; give it `on_click: <a function>`.
 - `spacer` — empty space (`width` / `height`).
+- `text_field` — a typeable box; bind a `Text` variable or use `on_change`.
+- `checkbox "..."` — on/off; bind a `Boolean` or use `on_change`.
+- `slider` — a number in a range (`min`, `max`, `step`); bind a `Number` or use `on_change`.
+- `image` — shows a sprite from `load_sprite` (`sprite:`, optional `width` / `height`).
+
+### Binding and `on_change`
+
+`bind: myVar` ties a widget to an ordinary variable: each frame the widget reads it, and
+user edits write back. That is enough for most forms.
+
+```plaintext
+name = ""
+volume = 50
+text_field (bind: name, width: 320)
+slider (bind: volume, min: 0, max: 100, step: 1, width: 320)
+```
+
+`on_change: <function>` runs whenever the value changes and receives the new value. Handy
+with an inline function:
+
+```plaintext
+text_field (
+    value: name,
+    on_change: make function (new) { name = new }
+)
+```
+
+You can use `bind` and `on_change` together (write-back, then the handler).
 
 ### Properties
 
@@ -506,11 +599,15 @@ Written in parentheses as `name: value`:
 - `spacing` — gap between children.
 - `align` — `center`, `left`, `right`, `top`, or `bottom` (cross-axis alignment).
 - `size` — font size for `text` / button labels.
-- `width`, `height` — a fixed size (handy for buttons).
+- `width`, `height` — a fixed size (handy for buttons and fields).
 - `color`, `bg` — text color / background (a named color or `rgb(...)`).
 - `font` — a font from `load_font("path.ttf")`.
-- `sprite` — a sprite from `load_sprite("path.png")` used as a button face.
+- `sprite` — a sprite from `load_sprite("path.png")` (button face or `image`).
 - `on_click` — for buttons, a function to run.
+- `bind` — variable name to read/write (`text_field`, `checkbox`, `slider`).
+- `on_change` — function `(new_value)` when an input changes.
+- `value` / `checked` — set the current value without binding (pair with `on_change`).
+- `min`, `max`, `step` — slider range and snap.
 
 The window itself also accepts `bg` / `background` for the clear color:
 
@@ -524,6 +621,8 @@ window "Demo" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
 }
 
 ```
+
+See [`examples/form.pt`](../examples/form.pt) for a complete settings form.
 
 ---
 

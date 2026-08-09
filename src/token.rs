@@ -75,6 +75,8 @@ pub enum TokenKind {
     Game,
     Window,
     On,
+    Try,
+    Otherwise,
 
     // Punctuation & operators
     LParen,

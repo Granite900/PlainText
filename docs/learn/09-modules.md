@@ -19,10 +19,12 @@ What happens:
 
 ## Built-in modules
 
-Today there is one: **math**.
+There are two: **math** (numbers — see [lesson 8](08-math-and-tools.md)) and **ai** (neural
+networks — see [lesson 12](12-neural-networks.md)).
 
 ```plaintext
 import math
+import ai
 ```
 
 File imports use a quoted path; built-in modules use a bare name.

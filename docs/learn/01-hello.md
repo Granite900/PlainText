@@ -69,8 +69,4 @@ Type an expression, press Enter, see the result. Type `exit` to leave. Great for
 2. Introduce a typo on purpose, run `plaintext check`, and read the error.
 3. Open the REPL and evaluate `print(1 + 2)`.
 
-**Next:** [Variables and text →](02-variables-and-text.md)
-
----
-
-[← Docs home](../README.md)
+**Next:** [Variables and text →](02-variables-and-text.md) · [Docs home ↑](../README.md)

@@ -43,7 +43,8 @@ backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 
 1. Download the latest **[release](https://github.com/Granite900/PlainText/releases)** for your OS
    (`plaintext-windows-x64.zip` or `plaintext-macos-arm64.zip`).
-2. Unzip it and put `plaintext` / `plaintext.exe` on your PATH.
+2. Unzip it and run the setup script for your OS from that folder — `bash scripts/install-macos.sh`
+   or `powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1` — to put `plaintext` on your PATH.
 3. Run something:
 
 ```
@@ -119,13 +120,15 @@ game "Bounce" (width: 800, height: 600) {
 | [`examples/learn.pt`](examples/learn.pt)     | `import ai` — train a neural network to learn XOR |
 | [`examples/classify.pt`](examples/classify.pt) | a real task — learn "is this point inside a circle?" and score accuracy |
 | [`examples/remember.pt`](examples/remember.pt) | `save` a trained network and `load_network` it back |
+| [`examples/dataset.pt`](examples/dataset.pt) | `load_dataset` — train from a `.csv` file instead of typed-out lists |
 | [`examples/gpu_learn.pt`](examples/gpu_learn.pt) | train on a GPU (`device: auto`, covers NVIDIA / AMD / Apple) |
 | [`examples/watch_learn.pt`](examples/watch_learn.pt) | watch a neural network learn live in a game window |
+| [`examples/evolve.pt`](examples/evolve.pt) | **neuroevolution** — a population of game agents that learn to play |
 
 ## Learn the language
 
 1. **[docs/README.md](docs/README.md)** — start here (lesson map)
-2. **[docs/learn/](docs/learn/)** — teacher-style lessons (hello → games & UI)
+2. **[docs/learn/](docs/learn/)** — teacher-style lessons (hello → games, UI, and neural nets)
 3. **[docs/cheatsheet.md](docs/cheatsheet.md)** — one-page syntax reminder
 4. **[docs/language-reference.md](docs/language-reference.md)** — full reference
 5. **[docs/troubleshooting.md](docs/troubleshooting.md)** — common errors (old binary, `import math`, …)
@@ -156,7 +159,7 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v2.0.0`, …) are built for **Windows + macOS** by GitHub Actions
+(`v2.2.0`, …) are built for **Windows + macOS** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## How it works
@@ -165,6 +168,10 @@ PlainText is a tree-walking interpreter written in Rust: **lexer → parser → 
 interpreter**, with a standard library and Raylib-backed game/UI APIs. Memory is reference
 counted with a mark-and-sweep collector on top to reclaim reference cycles, so you never manage
 memory yourself. See [docs/language-reference.md](docs/language-reference.md) for the language.
+
+Being a tree-walker, it favors clarity over raw speed — great for games, UIs, and learning, but
+slower than an optimized bytecode VM on tight numeric loops (see [benchmarks/](benchmarks/)). The
+one place that matters most, neural-network training, drops to compiled Rust and an optional GPU.
 
 ## Status
 

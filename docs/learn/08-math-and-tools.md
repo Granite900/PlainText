@@ -14,6 +14,7 @@ print(sqrt(144))
 print(greatest(3, 9, 5))
 print(pi)
 print(random_between(1, 6))    // useful in games
+print(round(3.14159, 2))       // 3.14 — round(x, places) tidies output
 ```
 
 Put `import math` near the top of any file that needs them (including games).
@@ -49,7 +50,7 @@ exit(1)      // non-zero = “something went wrong” for shells
 
 | Mistake | Fix |
 |---------|-----|
-| `Unknown name: sqrt` | Add `import math` |
+| `` `sqrt` needs the math module `` | Add `import math` |
 | Treating `input(...)` as a number | Wrap with `to_number(...)` |
 
 **Previous:** [Collections ←](07-collections.md) · **Next:** [Modules →](09-modules.md)

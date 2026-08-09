@@ -1,0 +1,18 @@
+// A compute-bound loop, timed with the language's own clock().
+// Paired with loop.py — the same algorithm — to compare raw speed.
+// Run with:  plaintext run benchmarks/loop.pt   (use a release build for real numbers)
+
+import math   // for round()
+
+n = 5000000
+total = 0.0
+i = 0
+
+began = clock()
+while i < n {
+    total = total + (i % 7) * 0.5 - (i % 3)
+    i = i + 1
+}
+elapsed = clock() - began
+
+print("plaintext: {round(elapsed, 3)} s   (checksum {total})")

@@ -45,6 +45,30 @@ Inside a game you can:
 
 Need random numbers? `import math` and use `random_between`.
 
+## Images & sound
+
+Load an image once (in the init area, not every frame), then draw it:
+
+```plaintext
+game "Sprites" (width: 800, height: 600) {
+    ship = load_sprite("assets/ship.png")     // load once
+    beep = load_sound("assets/beep.wav")
+
+    on draw() {
+        clear_screen(black)
+        draw_sprite(ship, 100, 100)               // native size
+        draw_sprite_scaled(ship, 300, 100, 2)     // 2× bigger
+        draw_sprite_rotated(ship, 500, 300, 45)   // rotated 45°, about its center
+    }
+}
+```
+
+Play a sound with `play_sound(beep)`. Sizes come from `sprite_width(ship)` / `sprite_height(ship)`.
+
+**Where do the files go?** Paths are relative to the folder you run `plaintext` **from**, not the
+`.pt` file's folder. Keep images in an `assets/` folder next to your program and run from there.
+PNG images, WAV/OGG sounds, and TTF fonts are supported.
+
 ## Practice — play these in order
 
 | Example | Idea |

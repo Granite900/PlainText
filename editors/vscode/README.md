@@ -3,8 +3,8 @@
 Syntax highlighting for the [PlainText](../../README.md) programming language (`.pt` files):
 keywords (including `class`, `dictionary`, `import`, `increase` / `decrease`, word
 comparisons like `is at least`), strings with `{interpolation}`, numbers, comments,
-function names, types/classes, built-in functions (`print`, `input`, `exit`, math, game/UI),
-and the `{pt` file icon in the explorer.
+function names, types/classes, built-in functions (`print`, `input`, `exit`, math, game/UI, and
+the `ai` module), and the PlainText `.pt` file icon in the explorer.
 
 ## Install (local)
 
@@ -14,8 +14,8 @@ PlainText isn't on the VS Code Marketplace yet. Install it from this folder:
 
 Copy this `vscode` folder into your VS Code extensions directory, then reload VS Code:
 
-- Windows: `%USERPROFILE%\.vscode\extensions\plaintext.plaintext-lang-2.0.0`
-- macOS / Linux: `~/.vscode/extensions/plaintext.plaintext-lang-2.0.0`
+- Windows: `%USERPROFILE%\.vscode\extensions\plaintext.plaintext-lang-2.2.0`
+- macOS / Linux: `~/.vscode/extensions/plaintext.plaintext-lang-2.2.0`
 
 **Option B — package a .vsix** (needs Node.js)
 
@@ -23,7 +23,7 @@ Copy this `vscode` folder into your VS Code extensions directory, then reload VS
 npm install -g @vscode/vsce
 cd editors/vscode
 vsce package --allow-missing-repository
-code --install-extension plaintext-lang-2.0.0.vsix
+code --install-extension plaintext-lang-2.2.0.vsix
 ```
 
 Or install `plaintext-lang.vsix` from a [GitHub release](https://github.com/Granite900/PlainText/releases) zip.

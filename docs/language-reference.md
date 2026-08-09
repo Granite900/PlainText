@@ -6,7 +6,7 @@ lookup** for syntax, types, the standard library, games, and UI.
 **New here?** Start with the [lesson path](README.md) instead — then come back when you need
 detail. Keep the [cheatsheet](cheatsheet.md) open while you code.
 
-It assumes you can run programs with `plaintext run yourfile.pt` (version **2.0.0+**).
+It assumes you can run programs with `plaintext run yourfile.pt` (version **2.2.0+**).
 
 ## Contents
 
@@ -24,8 +24,9 @@ It assumes you can run programs with `plaintext run yourfile.pt` (version **2.0.
 12. [The standard library at a glance](#12-the-standard-library-at-a-glance)
 13. [Splitting a program across files](#13-splitting-a-program-across-files)
 14. [Neural networks (the ai module)](#14-neural-networks-the-ai-module)
-15. [The REPL](#the-repl)
-16. [Appendix: when do I have to write a type?](#appendix-when-do-i-have-to-write-a-type)
+15. [The REPL](#15-the-repl)
+16. [Building a standalone app](#16-building-a-standalone-app)
+17. [Appendix: when do I have to write a type?](#17-appendix-when-do-i-have-to-write-a-type)
 
 ---
 
@@ -96,7 +97,7 @@ interpolation, or `to_text(x)`:
 
 ```plaintext
 count = 3
-print("You have " + count)      // error: can't add Text and Number
+print("You have " + count)      // error: can't add a Text and a Number
 print("You have {count}")       // good
 ```
 
@@ -310,7 +311,6 @@ print(scores.contains(82))   // true
 
 List methods: `length`, `is_empty`, `append`/`add`, `pop`, `get`, `contains`, `first`, `last`,
 `index_of`, `remove_at`, `reversed`, `join`, `sorted`, `transformed_by`, `kept_if`, `combined`.
-`index_of`, `remove_at`, `reversed`, `join`.
 
 An empty list has no way to guess its element type, so annotate it:
 
@@ -444,6 +444,13 @@ game "Sprites" (width: 800, height: 600) {
 
 Also: `sprite_width(sprite)`, `sprite_height(sprite)`.
 
+**Where image files go.** `load_sprite("ship.png")` looks for the file **relative to the folder
+you run `plaintext` from**, not the folder the `.pt` file is in. A common tidy layout is an
+`assets/` folder next to your program, loaded as `load_sprite("assets/ship.png")` and run from
+that program's folder. PNG works everywhere; if a sprite doesn't appear, a wrong path is the
+usual cause. The same rule applies to `load_sound` and `load_font`. Supported: `.png` images,
+`.wav`/`.ogg` sounds, `.ttf` fonts.
+
 ### Input
 
 - `key_down(name)` — held this frame. `key_pressed(name)` — pressed just now. Names: `"up"`,
@@ -524,7 +531,8 @@ window "Demo" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
 
 **Math** — put `import math` at the top of your file to use these: `min`, `greatest`, `abs`,
 `sqrt`, `floor`, `ceil`, `round`, `pow`, `clamp`, `sin`, `cos`, `tan`, `random_between(lo, hi)`,
-and the constants `pi` and `e`.
+and the constants `pi` and `e`. `round(x)` rounds to a whole number; `round(x, places)` rounds to
+that many decimals — handy for tidy output, e.g. `round(0.98765, 2)` is `0.99`.
 
 ```plaintext
 import math
@@ -539,6 +547,19 @@ Everything else below is always available — no import needed.
 
 **Files**: `read_file(path)`, `write_file(path, text)`, `append_file(path, text)`,
 `file_exists(path)`.
+
+**Data files**: `read_csv(path)` reads a file of comma- or space-separated numbers into a list
+of rows (a one-line header of names is skipped automatically, and `#` lines are ignored).
+`load_dataset(path, outputs: n)` goes one step further for machine learning — it splits each row
+into inputs and answers and hands back `[examples, answers]`:
+
+```plaintext
+rows = read_csv("scores.csv")            // [[1, 2, 3], [4, 5, 6], ...]
+
+data = load_dataset("training.csv", outputs: 1)
+examples = data[0]
+answers  = data[1]
+```
 
 **Time**: `now()` (seconds since 1970), `clock()` (seconds since the program started).
 
@@ -678,6 +699,45 @@ brain.save("brain.ai")                    // later:  brain = load_network("brain
 [`examples/remember.pt`](../examples/remember.pt) trains a network, saves it, and loads it straight
 back to show the trained brain survives a round-trip.
 
+**Loading a dataset from a file.** Instead of typing examples and answers out by hand, keep them
+in a `.csv` file — one row per example, the input columns first and the answer column(s) last —
+and load it with `load_dataset(path, outputs: n)`:
+
+```plaintext
+data = load_dataset("training.csv", outputs: 1)
+brain.train(data[0], data[1], epochs: 500, optimizer: adam)   // data[0] = examples, data[1] = answers
+```
+
+A header row of column names is skipped automatically. `read_csv(path)` is the lower-level tool
+if you want the raw rows of numbers to arrange yourself.
+
+**Neuroevolution — learning without answers.** Sometimes there is no "right answer" to train on,
+only a way to score how well something did — how far a character got, how long it survived. For
+that, breed a **population** of networks: score each one, keep the best, and let the winners
+produce a slightly-mutated next generation. Over many generations they get better on their own.
+
+```plaintext
+brains = population(count: 100, inputs: 4, hidden: [8], outputs: 2)
+
+// ...let every brain control an agent and measure how it did...
+scores = [ ... ]                              // one fitness number per brain
+
+champion = best_of(brains, scores)            // the current best (to draw or save)
+brains = evolve(brains, scores, mutation: 0.1, keep: 4)   // the next generation
+```
+
+| Function | What it does |
+|---|---|
+| `population(count:, inputs:, hidden:, outputs:)` | a list of `count` fresh random networks (same shape) |
+| `evolve(brains, scores, mutation:, keep:)` | next generation: keep the top `keep`, breed + mutate the rest |
+| `best_of(brains, scores)` | the single highest-scoring network |
+
+`brains` is an ordinary list — index it with `brains[i]` and call `brains[i].predict(...)` like any
+network. Higher scores are better; they can be any numbers you like. `mutation` (default `0.1`) is
+how much weights are jiggled each generation, and `keep` (default `1`) is how many top performers
+survive unchanged. See [`examples/evolve.pt`](../examples/evolve.pt) — a population of dots that
+teach themselves to reach a goal, no training data in sight.
+
 This is a small feed-forward network — made for learning and for little numeric problems, not for
 large images or text. Targets train best scaled to the 0–1 range.
 
@@ -686,7 +746,7 @@ large images or text. Targets train best scaled to the 0–1 range.
 
 ---
 
-## The REPL
+## 15. The REPL
 
 Run `plaintext repl` for an interactive session. Type an expression to see its value; anything
 you define sticks around for later lines. Multi-line blocks (functions, `if`, …) keep reading
@@ -702,7 +762,7 @@ HI
 
 ---
 
-## Building a standalone app
+## 16. Building a standalone app
 
 `plaintext build game.pt` turns your program into a single executable your friends can run
 **without installing PlainText** — it bundles your code (and every file it imports) into a copy
@@ -732,7 +792,7 @@ separate, paid step.)
 
 ---
 
-## Appendix: when do I have to write a type?
+## 17. Appendix: when do I have to write a type?
 
 Almost never. You only need an explicit type when PlainText genuinely can't infer one:
 

@@ -2,7 +2,7 @@
   "name": "plaintext-lang",
   "displayName": "PlainText Language",
   "description": "Syntax highlighting for the PlainText programming language (.pt).",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "publisher": "plaintext",
   "icon": "icons/pt.png",
   "engines": {

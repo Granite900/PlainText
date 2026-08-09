@@ -78,6 +78,48 @@ print(smart.predict([1, 0]))
 
 See [`remember.pt`](../../examples/remember.pt) for the full round-trip.
 
+## Load data from a file
+
+Typing examples out by hand gets old fast. Put them in a `.csv` file instead — one row per
+example, input columns first, answer column(s) last — and load it:
+
+```plaintext
+data = load_dataset("training.csv", outputs: 1)
+examples = data[0]
+answers  = data[1]
+brain.train(examples, answers, epochs: 500, optimizer: adam)
+```
+
+A header row of column names is skipped for you. `read_csv("file.csv")` is the simpler tool when
+you just want the raw rows of numbers. [`dataset.pt`](../../examples/dataset.pt) trains on a real
+CSV of 300 labelled points.
+
+## Neuroevolution — learning with no answers
+
+Backprop needs the right answer for every example. But how do you train a character to play a
+game, where the only feedback is "you got a score of 240"? You **evolve** it:
+
+1. Make a whole **population** of random networks.
+2. Let each one try, and give it a **score** (fitness) for how well it did.
+3. Keep the best, breed the winners into a new generation with small random changes, and repeat.
+
+```plaintext
+brains = population(count: 100, inputs: 4, hidden: [8], outputs: 2)
+
+// each generation:
+scores = [ ... ]                              // one number per brain — higher is better
+champion = best_of(brains, scores)            // the current star (draw it, or save it)
+brains = evolve(brains, scores, mutation: 0.1, keep: 4)
+```
+
+`brains` is just a list — use `brains[i].predict(...)` to drive agent `i`. No training data at
+all; the population teaches itself. [`evolve.pt`](../../examples/evolve.pt) is a whole crowd of
+dots that learn to steer to a goal this way — watch the generation counter climb.
+
+```bash
+plaintext run examples/evolve.pt
+```
+
 ## Train on a GPU
 
 Add `device:` when you build the network to train on a graphics card. One backend covers
@@ -120,8 +162,10 @@ plaintext run examples/watch_learn.pt
 | [`learn.pt`](../../examples/learn.pt) | Train XOR from scratch |
 | [`classify.pt`](../../examples/classify.pt) | A real task + an accuracy score |
 | [`remember.pt`](../../examples/remember.pt) | `save` and `load_network` |
+| [`dataset.pt`](../../examples/dataset.pt) | Train from a `.csv` file |
 | [`gpu_learn.pt`](../../examples/gpu_learn.pt) | Train on a GPU |
 | [`watch_learn.pt`](../../examples/watch_learn.pt) | Watch it learn live |
+| [`evolve.pt`](../../examples/evolve.pt) | Neuroevolution — a game agent that learns to play |
 
 ## Common mistakes
 

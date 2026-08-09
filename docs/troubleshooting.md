@@ -10,7 +10,7 @@ Your `plaintext` binary is **older than the examples**.
 plaintext version
 ```
 
-Examples in this repo need **2.0.0 or newer**. Fix by either:
+Examples in this repo need **2.2.0 or newer**. Fix by either:
 
 - Downloading the [latest release](https://github.com/Granite900/PlainText/releases), **or**
 - From a clone: `cargo install --path . --force`
@@ -22,7 +22,7 @@ Then open a **new** terminal and check `plaintext version` again.
 Same root cause: an old binary that does not know `increase … by` / `decrease … by`.
 Update PlainText (see above).
 
-## `Unknown name: sqrt` / `pi` / `random_between`
+## `` `sqrt` needs the math module `` (or `pi`, `random_between`, …)
 
 Math helpers live in a module. Put this at the **top** of the file:
 
@@ -30,7 +30,9 @@ Math helpers live in a module. Put this at the **top** of the file:
 import math
 ```
 
-## `Cannot add Text and Number`
+Likewise, `neural_network`, `population`, and friends need `import ai`.
+
+## `can't add a Text and a Number`
 
 Do not glue strings with `+` and a number. Use interpolation:
 

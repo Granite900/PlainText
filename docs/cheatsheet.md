@@ -105,14 +105,24 @@ exit()                      // optional code 0–255
 ```plaintext
 import math
 
+ship = load_sprite("assets/ship.png")   // image file, relative to where you run plaintext
+beep = load_sound("assets/beep.wav")
+
 game "Title" (width: 800, height: 600) {
-    on update(delta) { … }
+    on update(delta) {
+        if key_down("left") { decrease x by 200 * delta }   // held
+        if key_pressed("space") { play_sound(beep) }        // just pressed
+    }
     on draw() {
         clear_screen(skyblue)
         draw_circle(x, y, 20, red)
+        draw_sprite(ship, x, y)                             // also _scaled / _rotated
+        draw_text("Score: {score}", 20, 20, 24, white)
     }
 }
 ```
+
+Input: `key_down` / `key_pressed` (`"up"`, `"space"`, `"w"`, …), `mouse_x()`, `mouse_pressed()`.
 
 ## UI (sketch)
 
@@ -123,6 +133,26 @@ window "Title" (width: 420, height: 260) {
         button "More" (on_click: increment)
     }
 }
+```
+
+## Neural networks (`import ai`)
+
+```plaintext
+import ai
+
+brain = neural_network(inputs: 2, hidden: [8], outputs: 1)   // device: auto to use a GPU
+brain.train(examples, answers, epochs: 3000, optimizer: adam, rate: 0.05)
+brain.predict([1, 0])                     // → a list, one number per output
+brain.save("brain.ai")                    // load_network("brain.ai") to reload
+
+data = load_dataset("training.csv", outputs: 1)   // examples = data[0], answers = data[1]
+```
+
+Neuroevolution (learn from a score, no answers — great for game agents):
+
+```plaintext
+brains = population(count: 100, inputs: 4, hidden: [8], outputs: 2)
+brains = evolve(brains, scores, mutation: 0.1, keep: 4)   // best_of(brains, scores) = the champion
 ```
 
 ## Where to go next

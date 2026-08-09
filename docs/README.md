@@ -35,7 +35,7 @@ About **60–90 minutes** if you try every exercise.
 | 9 | [Modules](learn/09-modules.md) | Splitting a program across files |
 | 10 | [Games](learn/10-games.md) | `game`, update/draw, sprites, input |
 | 11 | [Desktop UI](learn/11-ui.md) | `window`, buttons, layout |
-| 12 | [Neural networks](learn/12-neural-networks.md) | `import ai`, train / predict, save, GPU |
+| 12 | [Neural networks](learn/12-neural-networks.md) | `import ai`, train / predict, datasets, GPU, neuroevolution |
 
 Every example under [`examples/`](../examples/) is meant to be readable — steal from them freely.
 

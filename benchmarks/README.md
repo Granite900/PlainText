@@ -30,4 +30,7 @@ cargo build --release
 python benchmarks/loop.py
 ```
 
-Numbers vary by machine; what matters is the ratio on the *same* machine.
+On Windows, run Python as `python`, **not** `python3` — `python3` is a Microsoft Store alias that
+prints "Python was not found" and exits without running your script, which makes Python look
+absurdly fast (you're only timing the error). Numbers vary by machine and by Python version
+(CPython got much faster across 3.11–3.14); what matters is the ratio on the *same* setup.

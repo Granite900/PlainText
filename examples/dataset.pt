@@ -1,20 +1,44 @@
-// Training from a data file instead of typing examples out by hand.
-// The CSV in examples/data/circle.csv has 300 rows of  x, y, inside  — points
-// labelled 1 if they fall inside a circle, 0 if not. load_dataset reads them.
-// Run from the repo root with:  plaintext run examples/dataset.pt
+// Train from a CSV, then score accuracy on fresh random points.
+// The file examples/data/circle.csv has rows of  x, y, inside  (1 = inside the circle).
+// Run from the repo root:  plaintext run examples/dataset.pt
 
 import ai
-import math   // for round()
+import math   // for round(), random_between()
 
-// outputs: 1  → the last column is the answer, the rest are inputs.
-// (The header row of column names is skipped automatically.)
+make function called inside_circle(x: Number, y: Number) {
+    dx = x - 0.5
+    dy = y - 0.5
+    if dx * dx + dy * dy < 0.35 * 0.35 {
+        return 1
+    }
+    return 0
+}
+
+// outputs: 1 → last column is the answer; earlier columns are inputs.
+// (A header row of names is skipped automatically.)
 data = load_dataset("examples/data/circle.csv", outputs: 1)
 examples = data[0]
 answers  = data[1]
 print("loaded {examples.length()} examples from the file")
 
-brain = neural_network(inputs: 2, hidden: [12, 12], outputs: 1)
+brain = neural_network(inputs: 2, hidden: [12, 12], outputs: 1, device: auto)
 brain.train(examples, answers, epochs: 1500, optimizer: adam, rate: 0.05)
 
-print("center (0.5, 0.5) -> {round(brain.predict([0.5, 0.5])[0], 3)}")   // near 1 (inside)
-print("corner (0.0, 0.0) -> {round(brain.predict([0.0, 0.0])[0], 3)}")   // near 0 (outside)
+print("center (0.5, 0.5) -> {round(brain.predict([0.5, 0.5])[0], 3)}")   // near 1
+print("corner (0.0, 0.0) -> {round(brain.predict([0.0, 0.0])[0], 3)}")   // near 0
+
+// Grade on points the network never trained on.
+correct = 0
+repeat 300 times {
+    x = random_between(0, 1)
+    y = random_between(0, 1)
+    guess = brain.predict([x, y])[0]
+    picked = 0
+    if guess > 0.5 {
+        picked = 1
+    }
+    if picked is inside_circle(x, y) {
+        increase correct by 1
+    }
+}
+print("accuracy on new points: {correct} / 300")

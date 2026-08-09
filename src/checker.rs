@@ -30,6 +30,12 @@ pub enum Ty {
     Class(String),
     /// A neural network (from `import ai`).
     Network,
+    /// Game-kit types (`import gamekit`).
+    Body,
+    Hitbox,
+    PhysicsWorld,
+    /// The `web` helper from `import web`.
+    WebModule,
     /// `T?` — may hold a `T` or `nothing`.
     Optional(Box<Ty>),
     Function(Rc<FnSig>),
@@ -55,6 +61,10 @@ impl Ty {
             Ty::Dictionary(k, v) => format!("dictionary of {} to {}", k.describe(), v.describe()),
             Ty::Class(n) => n.clone(),
             Ty::Network => "neural network".into(),
+            Ty::Body => "body".into(),
+            Ty::Hitbox => "hitbox".into(),
+            Ty::PhysicsWorld => "physics world".into(),
+            Ty::WebModule => "web".into(),
             Ty::Optional(t) => format!("{}?", t.describe()),
             Ty::Function(_) => "function".into(),
             Ty::Dynamic => "anything".into(),
@@ -127,6 +137,9 @@ impl Checker {
             for word in ["sgd", "adam", "momentum", "rmsprop", "cpu", "gpu", "auto", "cuda", "rocm", "mps", "vulkan", "dx12"] {
                 self.declare(word, Ty::Text);
             }
+        }
+        if self.imports.contains("web") {
+            self.declare("web", Ty::WebModule);
         }
         for (name, _) in crate::gfx::named_colors() {
             self.declare(name, Ty::List(Box::new(Ty::Number)));
@@ -423,11 +436,11 @@ impl Checker {
             }
             Stmt::Break(_) | Stmt::Continue(_) => {}
             Stmt::Import { module, span } => {
-                if module != "math" && module != "ai" {
+                if module != "math" && module != "ai" && module != "gamekit" && module != "web" {
                     self.error(
                         *span,
                         format!("unknown module `{}`", module),
-                        Some("the modules are `math` and `ai`".into()),
+                        Some("the modules are `math`, `ai`, `gamekit`, and `web`".into()),
                     );
                 }
             }
@@ -558,6 +571,41 @@ impl Checker {
                             }
                         } else {
                             self.error(*fspan, format!("`{}` has no field `{}`", tn, name), None);
+                        }
+                    }
+                    Ty::Body => {
+                        let ok = matches!(
+                            name.as_str(),
+                            "x" | "y" | "width" | "height" | "vx" | "vy" | "solid" | "static" | "on_ground"
+                        );
+                        if !ok {
+                            self.error(*fspan, format!("a body has no field `{}`", name), None);
+                        } else if matches!(name.as_str(), "solid" | "static" | "on_ground") {
+                            self.expect(&value_ty, &Ty::Bool, span, "this field is true or false");
+                        } else {
+                            self.expect(&value_ty, &Ty::Number, span, "this field is a number");
+                        }
+                    }
+                    Ty::Hitbox => {
+                        let ok = matches!(
+                            name.as_str(),
+                            "offset_x" | "offset_y" | "width" | "height" | "kind" | "active"
+                        );
+                        if !ok {
+                            self.error(*fspan, format!("a hitbox has no field `{}`", name), None);
+                        } else if name == "active" {
+                            self.expect(&value_ty, &Ty::Bool, span, "active is true or false");
+                        } else if name == "kind" {
+                            self.expect(&value_ty, &Ty::Text, span, "kind is text, e.g. \"hurt\"");
+                        } else {
+                            self.expect(&value_ty, &Ty::Number, span, "this field is a number");
+                        }
+                    }
+                    Ty::PhysicsWorld => {
+                        if name == "gravity" {
+                            self.expect(&value_ty, &Ty::Number, span, "gravity is a number");
+                        } else {
+                            self.error(*fspan, format!("a physics world has no field `{}`", name), None);
                         }
                     }
                     Ty::Dynamic => {}
@@ -779,6 +827,20 @@ impl Checker {
                     Some("add `import ai` at the top of your file".into()),
                 );
             }
+            if b.is_gamekit() && !self.imports.contains("gamekit") {
+                self.error(
+                    span,
+                    format!("`{}` needs the gamekit module", name),
+                    Some("add `import gamekit` at the top of your file".into()),
+                );
+            }
+            if b.is_web() && !self.imports.contains("web") {
+                self.error(
+                    span,
+                    format!("`{}` needs the web module", name),
+                    Some("add `import web` at the top of your file".into()),
+                );
+            }
             return Ty::Dynamic; // builtins are handled at their call sites
         }
         self.error(
@@ -904,6 +966,20 @@ impl Checker {
                         Some("add `import ai` at the top of your file".into()),
                     );
                 }
+                if b.is_gamekit() && !self.imports.contains("gamekit") {
+                    self.error(
+                        span,
+                        format!("`{}` needs the gamekit module", fname),
+                        Some("add `import gamekit` at the top of your file".into()),
+                    );
+                }
+                if b.is_web() && !self.imports.contains("web") {
+                    self.error(
+                        span,
+                        format!("`{}` needs the web module", fname),
+                        Some("add `import web` at the top of your file".into()),
+                    );
+                }
                 let arg_tys: Vec<Ty> = args.iter().map(|a| self.type_of(a)).collect();
                 return self.builtin_return(b, &arg_tys, span);
             }
@@ -983,6 +1059,41 @@ impl Checker {
             Ty::Text => self.text_method(name, span),
             Ty::Dictionary(k, v) => self.map_method(k, v, name, span),
             Ty::Network => self.network_method(name, span),
+            Ty::Body => match name {
+                "move" | "set_velocity" | "bump" => Ty::Nothing,
+                "jump" => Ty::Bool,
+                _ => {
+                    self.error(span, format!("a body has no method `{}`", name), None);
+                    Ty::Dynamic
+                }
+            },
+            Ty::Hitbox => match name {
+                "overlaps" => Ty::Bool,
+                _ => {
+                    self.error(span, format!("a hitbox has no method `{}`", name), None);
+                    Ty::Dynamic
+                }
+            },
+            Ty::PhysicsWorld => match name {
+                "add" | "step" | "sync_hitboxes" => Ty::Nothing,
+                "hits" => Ty::Bool,
+                _ => {
+                    self.error(span, format!("a physics world has no method `{}`", name), None);
+                    Ty::Dynamic
+                }
+            },
+            Ty::WebModule => match name {
+                "get" | "post_json" => Ty::Text,
+                "get_json" => Ty::Dynamic,
+                _ => {
+                    self.error(
+                        span,
+                        format!("web has no method `{}`", name),
+                        Some("try `get`, `get_json`, or `post_json`".into()),
+                    );
+                    Ty::Dynamic
+                }
+            },
             other => {
                 self.error(span, format!("a {} has no method `{}`", other.describe(), name), None);
                 Ty::Dynamic
@@ -1062,6 +1173,13 @@ impl Checker {
             | MouseY | LoadSprite | SpriteWidth | SpriteHeight | LoadSound | LoadFont => Ty::Number,
             NeuralNetwork | LoadNetwork | BestOf => Ty::Network,
             Population | Evolve => Ty::List(Box::new(Ty::Network)),
+            PhysicsWorld => Ty::PhysicsWorld,
+            Body => Ty::Body,
+            Hitbox => Ty::Hitbox,
+            Overlaps | Pressed => Ty::Bool,
+            DrawBody | DrawHitbox | DrawHitboxes => Ty::Nothing,
+            WebPostJson | ToJson => Ty::Text,
+            WebGetJson | ParseJson => Ty::Dynamic,
             // read_csv → rows of numbers; load_dataset → [examples, answers].
             ReadCsv => Ty::List(Box::new(Ty::List(Box::new(Ty::Number)))),
             LoadDataset => Ty::List(Box::new(Ty::List(Box::new(Ty::List(Box::new(Ty::Number)))))),
@@ -1071,6 +1189,52 @@ impl Checker {
     fn field_access(&mut self, obj: &Ty, name: &str, span: Span) -> Ty {
         match obj {
             Ty::Dynamic => Ty::Dynamic,
+            Ty::Body => match name {
+                "x" | "y" | "width" | "height" | "vx" | "vy" | "center_x" | "center_y" => Ty::Number,
+                "solid" | "static" | "on_ground" => Ty::Bool,
+                "move" | "set_velocity" | "bump" | "jump" => Ty::Function(Rc::new(FnSig {
+                    id: None, params: vec![Ty::Dynamic], required: 0,
+                })),
+                _ => {
+                    self.error(span, format!("a body has no field `{}`", name), None);
+                    Ty::Dynamic
+                }
+            },
+            Ty::Hitbox => match name {
+                "offset_x" | "offset_y" | "width" | "height" | "x" | "y" => Ty::Number,
+                "kind" => Ty::Text,
+                "active" => Ty::Bool,
+                "overlaps" => Ty::Function(Rc::new(FnSig {
+                    id: None, params: vec![Ty::Hitbox], required: 1,
+                })),
+                _ => {
+                    self.error(span, format!("a hitbox has no field `{}`", name), None);
+                    Ty::Dynamic
+                }
+            },
+            Ty::PhysicsWorld => match name {
+                "gravity" => Ty::Number,
+                "add" | "step" | "hits" | "sync_hitboxes" => Ty::Function(Rc::new(FnSig {
+                    id: None, params: vec![Ty::Dynamic], required: 0,
+                })),
+                _ => {
+                    self.error(span, format!("a physics world has no field `{}`", name), None);
+                    Ty::Dynamic
+                }
+            },
+            Ty::WebModule => match name {
+                "get" | "get_json" | "post_json" => Ty::Function(Rc::new(FnSig {
+                    id: None, params: vec![Ty::Dynamic], required: 0,
+                })),
+                _ => {
+                    self.error(
+                        span,
+                        format!("web has no field `{}`", name),
+                        Some("try `get`, `get_json`, or `post_json`".into()),
+                    );
+                    Ty::Dynamic
+                }
+            },
             Ty::Class(tn) => {
                 if let Some(ft) = self.field_of(tn, name) {
                     ft
@@ -1247,6 +1411,10 @@ fn assignable(from: &Ty, to: &Ty) -> bool {
         | (Ty::Nothing, Ty::Nothing) => true,
         (Ty::Class(a), Ty::Class(b)) => a == b,
         (Ty::Network, Ty::Network) => true,
+        (Ty::Body, Ty::Body) => true,
+        (Ty::Hitbox, Ty::Hitbox) => true,
+        (Ty::PhysicsWorld, Ty::PhysicsWorld) => true,
+        (Ty::WebModule, Ty::WebModule) => true,
         (Ty::List(a), Ty::List(b)) => assignable(a, b),
         (Ty::Dictionary(ak, av), Ty::Dictionary(bk, bv)) => assignable(ak, bk) && assignable(av, bv),
         // Into an optional: nothing fits, and the inner type fits.
@@ -1290,6 +1458,10 @@ fn types_equal(a: &Ty, b: &Ty) -> bool {
         | (Ty::Dynamic, Ty::Dynamic) => true,
         (Ty::Class(x), Ty::Class(y)) => x == y,
         (Ty::Network, Ty::Network) => true,
+        (Ty::Body, Ty::Body) => true,
+        (Ty::Hitbox, Ty::Hitbox) => true,
+        (Ty::PhysicsWorld, Ty::PhysicsWorld) => true,
+        (Ty::WebModule, Ty::WebModule) => true,
         (Ty::List(x), Ty::List(y)) => types_equal(x, y),
         (Ty::Dictionary(xk, xv), Ty::Dictionary(yk, yv)) => types_equal(xk, yk) && types_equal(xv, yv),
         (Ty::Optional(x), Ty::Optional(y)) => types_equal(x, y),

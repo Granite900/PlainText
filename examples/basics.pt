@@ -1,5 +1,5 @@
-// Core language tour: functions, classes, loops, dictionaries, and optionals.
-// Run with:  plaintext run examples/basics.pt
+// Core language tour: functions, classes, loops, dictionaries, optionals,
+// and a flexible (Dynamic) parameter. Run with:  plaintext run examples/basics.pt
 
 import math   // needed for greatest(), sqrt(), pi, …
 
@@ -67,4 +67,31 @@ class Contact {
 c = Contact { name: "Robert", nickname: "Bob" }
 if c.nickname is not nothing {
     print("{c.name} goes by {c.nickname}")
+}
+
+// --- Flexible parameters (Dynamic) ---
+// No type on `items` → checked at run time. Handy for mixed lists of class values.
+class Item {
+    name: Text
+    price: Number
+    quantity = 1
+}
+
+make function called total_cost(items) {
+    total = 0
+    for every item in items {
+        increase total by item.price * item.quantity
+    }
+    return total
+}
+
+cart = [
+    Item { name: "Apple", price: 0.50, quantity: 6 },
+    Item { name: "Bread", price: 2.75 }
+]
+cost = total_cost(cart)
+if cost is more than 10 {
+    print("Cart total {cost} — free shipping!")
+} else {
+    print("Cart total {cost}")
 }

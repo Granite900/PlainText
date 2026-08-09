@@ -10,6 +10,7 @@ Cargo.lock.bak
 smoke_err.txt
 smoke_out.txt
 *.pdb
+*.ai
 
 # Editor / OS
 .DS_Store
@@ -23,6 +24,7 @@ Thumbs.db
 editors/vscode/*.vsix
 editors/vscode/README.md.bak
 editors/vscode/README.md.pack
+editors/vscode/node_modules/
 
 # Resolved debug icons
 assets/resolved-pt-icon.png

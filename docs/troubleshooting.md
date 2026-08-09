@@ -10,7 +10,7 @@ Your `plaintext` binary is **older than the examples**.
 plaintext version
 ```
 
-Examples in this repo need **2.4.0 or newer**. Fix by either:
+Examples in this repo need **2.8.0 or newer**. Fix by either:
 
 - Downloading the [latest release](https://github.com/Granite900/PlainText/releases), **or**
 - From a clone: `cargo install --path . --force`
@@ -31,6 +31,19 @@ import math
 ```
 
 Likewise, `neural_network`, `population`, and friends need `import ai`.
+
+## VS Code shows colors but no red squiggles
+
+You installed the extension, but VS Code can’t start `plaintext lsp`.
+
+1. In a **new** terminal run: `plaintext version` (need **2.8.0+**).
+2. If that fails, put the folder that contains `plaintext` on your PATH, **or** in
+   VS Code settings set **`plaintext.path`** to the full path
+   (example: `C:\PlainText\plaintext.exe`).
+3. Reload the window (**Developer: Reload Window**).
+4. Still stuck? **View → Output → PlainText Language Server** for the error.
+
+Full install steps: [editors/vscode/README.md](../editors/vscode/README.md).
 
 ## `can't add a Text and a Number`
 
@@ -66,5 +79,6 @@ Some machines block freshly built `--release` binaries. Try:
 ## Still stuck?
 
 1. `plaintext check yourfile.pt` and read the hint under the error.
-2. Compare with a nearby file in [`examples/`](../examples/).
+2. Compare with a nearby file in [`examples/`](../examples/)
+   ([index](../examples/README.md)).
 3. Skim the [cheatsheet](cheatsheet.md) and the matching [lesson](README.md).

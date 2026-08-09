@@ -19,8 +19,8 @@ then come back here. See [Troubleshooting](troubleshooting.md) if something feel
 
 ## Path A — Learn by doing (recommended)
 
-Twelve short lessons. Read one, run the linked example, then move on.
-About **60–90 minutes** if you try every exercise.
+Fourteen short lessons. Read one, run the linked example, then move on.
+About **70–100 minutes** if you try every exercise.
 
 | # | Lesson | What you practice |
 |---|--------|-------------------|
@@ -35,9 +35,12 @@ About **60–90 minutes** if you try every exercise.
 | 9 | [Modules](learn/09-modules.md) | Splitting a program across files |
 | 10 | [Games](learn/10-games.md) | `game`, update/draw, sprites, input |
 | 11 | [Desktop UI](learn/11-ui.md) | `window`, buttons, forms (`text_field` / `checkbox` / `slider`) |
-| 12 | [Neural networks](learn/12-neural-networks.md) | `import ai`, train / predict, datasets, GPU, neuroevolution |
+| 12 | [Game kit](learn/12-game-kit.md) | `import gamekit` — gravity, bodies, hitboxes |
+| 13 | [Neural networks](learn/13-neural-networks.md) | `import ai`, train / predict, datasets, GPU, neuroevolution |
+| 14 | [Talking to the web](learn/14-web.md) | `import web` — HTTP, JSON, offline fixtures |
 
-Every example under [`examples/`](../examples/) is meant to be readable — steal from them freely.
+Every example under [`examples/`](../examples/) is listed in
+[`examples/README.md`](../examples/README.md) — steal from them freely.
 
 ---
 
@@ -45,6 +48,7 @@ Every example under [`examples/`](../examples/) is meant to be readable — stea
 
 | Doc | Use it when… |
 |-----|----------------|
+| [**Examples index**](../examples/README.md) | Every runnable sample, grouped by topic |
 | [**Cheatsheet**](cheatsheet.md) | You need a one-page reminder of syntax |
 | [**Language reference**](language-reference.md) | You want the full story (types, stdlib, game/UI APIs) |
 | [**Troubleshooting**](troubleshooting.md) | Errors, old binaries, or “why doesn’t this run?” |

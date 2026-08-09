@@ -68,11 +68,12 @@ These are handy for [collections](07-collections.md) (`transformed_by`, `kept_if
 
 ## Practice
 
-Open [`examples/cart.pt`](../../examples/cart.pt). It defines an `Item` class and a
-`total_cost` function with a flexible `items` parameter. Run it:
+Open [`examples/basics.pt`](../../examples/basics.pt). Near the end it defines an `Item`
+class and a `total_cost` function with a flexible `items` parameter (no type → Dynamic).
+Run it:
 
 ```bash
-plaintext run examples/cart.pt
+plaintext run examples/basics.pt
 ```
 
 ## Common mistakes

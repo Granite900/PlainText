@@ -5,6 +5,7 @@
 //!   plaintext check <file.pt>   parse only, report any errors
 //!   plaintext build <file.pt>   bundle into a standalone executable
 //!   plaintext repl              start an interactive session
+//!   plaintext lsp               language server (stdio) for editors
 //!   plaintext new <name>        scaffold a new project folder
 //!   plaintext version           print the version
 //!
@@ -16,26 +17,29 @@ mod bundle;
 mod checker;
 mod diagnostics;
 mod game;
+mod gamekit;
 mod gc;
 mod gfx;
 mod gpu;
 mod interpreter;
 mod lexer;
+mod load;
+mod lsp;
 mod nn;
 mod parser;
 mod token;
 mod ui;
 mod value;
+mod web;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use checker::Checker;
 use diagnostics::Diagnostic;
 use interpreter::Interpreter;
-use lexer::Lexer;
-use parser::Parser;
+use load::{load_bundle, load_program, parse_file, Loaded};
 
 /// Type-check a program, printing every diagnostic. Returns true if it's clean.
 fn type_check(files: &[String], program: &ast::Program) -> bool {
@@ -66,6 +70,13 @@ fn main() -> ExitCode {
         Some("check") => cmd_check(args.get(1)),
         Some("build") => cmd_build(&args[1..]),
         Some("repl") => cmd_repl(),
+        Some("lsp") => {
+            if let Err(e) = lsp::run() {
+                eprintln!("language server error: {}", e);
+                return ExitCode::FAILURE;
+            }
+            ExitCode::SUCCESS
+        }
         Some("new") => cmd_new(args.get(1)),
         Some("version") | Some("--version") | Some("-v") => {
             println!("plaintext {}", env!("CARGO_PKG_VERSION"));
@@ -91,156 +102,10 @@ fn print_usage() {
          plaintext check <file.pt>   Check a program for errors without running it\n  \
          plaintext build <file.pt>   Bundle into a standalone app (-o, --runtime, --run)\n  \
          plaintext repl              Start an interactive session\n  \
+         plaintext lsp               Language server for editors (stdio)\n  \
          plaintext new <name>        Create a new project folder\n  \
          plaintext version           Print the version"
     );
-}
-
-/// Lex + parse one file (stamping its spans with `file_id`), returning either
-/// its program or an already-rendered error string pointing at the right file.
-fn parse_file(path: &str, src: &str, file_id: u16) -> Result<ast::Program, String> {
-    let tokens = Lexer::with_file(src, file_id).tokenize().map_err(|d| d.render(path))?;
-    Parser::new(tokens).parse_program().map_err(|d| d.render(path))
-}
-
-/// Everything loaded from an entry file: the merged program (dependencies
-/// first), the file-id → display-name table, and — for `build` — every source
-/// keyed by a stable relative path, plus which key is the entry.
-struct Loaded {
-    program: ast::Program,
-    files: Vec<String>,
-    sources: Vec<(String, String)>,
-    entry_key: String,
-}
-
-/// Load an entry file and every file it imports, splicing them into one program.
-/// Returns an already-rendered error on failure.
-fn load_program(entry: &str) -> Result<Loaded, String> {
-    let mut ctx = LoadCtx {
-        out: Vec::new(),
-        files: Vec::new(),
-        sources: Vec::new(),
-        loaded: Vec::new(),
-        in_progress: Vec::new(),
-    };
-    let entry_key = Path::new(entry)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("main.pt")
-        .to_string();
-    load_file(Path::new(entry), &entry_key, true, &mut ctx)?;
-    Ok(Loaded {
-        program: ast::Program { statements: ctx.out },
-        files: ctx.files,
-        sources: ctx.sources,
-        entry_key,
-    })
-}
-
-struct LoadCtx {
-    out: Vec<ast::Stmt>,
-    /// File id → display name; a file's id is its index here.
-    files: Vec<String>,
-    /// (relative key, source) for every file, for bundling.
-    sources: Vec<(String, String)>,
-    loaded: Vec<PathBuf>,
-    in_progress: Vec<PathBuf>,
-}
-
-fn load_file(path: &Path, key: &str, is_entry: bool, ctx: &mut LoadCtx) -> Result<(), String> {
-    let shown = clean_path(&path.display().to_string());
-    let canonical = std::fs::canonicalize(path)
-        .map_err(|_| format!("Could not find file `{}`.", shown))?;
-    // Already merged, or currently being merged (an import cycle) — either way
-    // its definitions are or will be present, so don't include it twice.
-    if ctx.loaded.contains(&canonical) || ctx.in_progress.contains(&canonical) {
-        return Ok(());
-    }
-    let src = std::fs::read_to_string(&canonical)
-        .map_err(|e| format!("Could not read `{}`: {}", shown, e))?;
-
-    // Assign this file its id (its index in the table) before lexing, so every
-    // span it produces carries that id.
-    let file_id = ctx.files.len() as u16;
-    ctx.files.push(shown.clone());
-    ctx.sources.push((key.to_string(), src.clone()));
-    let program = parse_file(&shown, &src, file_id)?;
-
-    ctx.in_progress.push(canonical.clone());
-    let (imports, own) = match split_imports(program.statements, is_entry, &shown) {
-        Ok(split) => split,
-        Err(e) => {
-            ctx.in_progress.pop();
-            return Err(e);
-        }
-    };
-    let parent = canonical.parent().map(Path::to_path_buf).unwrap_or_default();
-    for rel in imports {
-        load_file(&parent.join(&rel), &norm_join(&dir_of(key), &rel), false, ctx)?;
-    }
-    ctx.out.extend(own);
-    ctx.in_progress.pop();
-    ctx.loaded.push(canonical);
-    Ok(())
-}
-
-/// Split a parsed file's statements into its file-imports (relative paths) and
-/// everything else, rejecting a `game`/`window` block in a non-entry file.
-/// Shared by the on-disk loader and the bundle loader.
-fn split_imports(
-    stmts: Vec<ast::Stmt>,
-    is_entry: bool,
-    shown: &str,
-) -> Result<(Vec<String>, Vec<ast::Stmt>), String> {
-    let mut imports = Vec::new();
-    let mut own = Vec::new();
-    for stmt in stmts {
-        match stmt {
-            ast::Stmt::ImportFile { path: rel, .. } => imports.push(rel),
-            ast::Stmt::Game(_) | ast::Stmt::Window(_) if !is_entry => {
-                return Err(format!(
-                    "Cannot import `{}`: an imported file can't contain a `game` or `window` block.",
-                    shown
-                ));
-            }
-            other => own.push(other),
-        }
-    }
-    Ok((imports, own))
-}
-
-/// The directory portion of a relative key (`sub/a.pt` → `sub`, `a.pt` → ``).
-fn dir_of(key: &str) -> String {
-    match key.rfind('/') {
-        Some(i) => key[..i].to_string(),
-        None => String::new(),
-    }
-}
-
-/// Join an import path onto a directory key and normalize `.`/`..`, keeping the
-/// result relative to the bundle root (leading `..` are preserved). Backslashes
-/// count as separators too, so a Windows-style import normalizes the same way.
-fn norm_join(dir: &str, rel: &str) -> String {
-    let mut parts: Vec<&str> = dir.split('/').filter(|s| !s.is_empty() && *s != ".").collect();
-    for seg in rel.split(['/', '\\']) {
-        match seg {
-            "" | "." => {}
-            ".." => {
-                if matches!(parts.last(), Some(&p) if p != "..") {
-                    parts.pop();
-                } else {
-                    parts.push("..");
-                }
-            }
-            other => parts.push(other),
-        }
-    }
-    parts.join("/")
-}
-
-/// Drop Windows' `\\?\` extended-length prefix so displayed paths read cleanly.
-fn clean_path(p: &str) -> String {
-    p.strip_prefix(r"\\?\").unwrap_or(p).to_string()
 }
 
 /// Turn a run result into an exit code: a real error prints and fails; an
@@ -300,68 +165,14 @@ fn execute(loaded: Loaded) -> ExitCode {
 /// Reconstruct and run a program embedded by `plaintext build`. It was already
 /// type-checked at build time, so this skips checking and just runs.
 fn run_bundle(payload: bundle::Payload) -> ExitCode {
-    match load_bundle(payload) {
+    let map: HashMap<String, String> = payload.files.into_iter().collect();
+    match load_bundle(payload.entry, map) {
         Ok(loaded) => execute(loaded),
         Err(msg) => {
             eprintln!("{}", msg);
             ExitCode::FAILURE
         }
     }
-}
-
-/// The bundle-side twin of `load_file`: walk the embedded source map by key
-/// (instead of the disk), producing the same merged program + file table.
-fn load_bundle(payload: bundle::Payload) -> Result<Loaded, String> {
-    let map: HashMap<String, String> = payload.files.into_iter().collect();
-    let mut out = Vec::new();
-    let mut files = Vec::new();
-    let mut loaded: Vec<String> = Vec::new();
-    let mut in_progress: Vec<String> = Vec::new();
-    load_key(&payload.entry, true, &map, &mut out, &mut files, &mut loaded, &mut in_progress)?;
-    Ok(Loaded {
-        program: ast::Program { statements: out },
-        files,
-        sources: Vec::new(),
-        entry_key: payload.entry,
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn load_key(
-    key: &str,
-    is_entry: bool,
-    map: &HashMap<String, String>,
-    out: &mut Vec<ast::Stmt>,
-    files: &mut Vec<String>,
-    loaded: &mut Vec<String>,
-    in_progress: &mut Vec<String>,
-) -> Result<(), String> {
-    if loaded.iter().any(|k| k == key) || in_progress.iter().any(|k| k == key) {
-        return Ok(());
-    }
-    let src = map
-        .get(key)
-        .ok_or_else(|| format!("this bundled app is missing file `{}`.", key))?;
-    let file_id = files.len() as u16;
-    files.push(key.to_string());
-    let program = parse_file(key, src, file_id)?;
-
-    in_progress.push(key.to_string());
-    let (imports, own) = match split_imports(program.statements, is_entry, key) {
-        Ok(split) => split,
-        Err(e) => {
-            in_progress.pop();
-            return Err(e);
-        }
-    };
-    for rel in imports {
-        let child = norm_join(&dir_of(key), &rel);
-        load_key(&child, false, map, out, files, loaded, in_progress)?;
-    }
-    out.extend(own);
-    in_progress.pop();
-    loaded.push(key.to_string());
-    Ok(())
 }
 
 fn cmd_check(path: Option<&String>) -> ExitCode {

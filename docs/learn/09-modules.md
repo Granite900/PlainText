@@ -19,11 +19,14 @@ What happens:
 
 ## Built-in modules
 
-There are two: **math** (numbers — see [lesson 8](08-math-and-tools.md)) and **ai** (neural
-networks — see [lesson 12](12-neural-networks.md)).
+There are four built-in modules: **math** (numbers — [lesson 8](08-math-and-tools.md)),
+**gamekit** (gravity and hitboxes — [lesson 12](12-game-kit.md)), **web** (HTTP and JSON —
+[lesson 14](14-web.md)), and **ai** (neural networks — [lesson 13](13-neural-networks.md)).
 
 ```plaintext
 import math
+import gamekit
+import web
 import ai
 ```
 

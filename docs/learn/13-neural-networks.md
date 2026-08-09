@@ -1,4 +1,4 @@
-# 12. Neural networks
+# 13. Neural networks
 
 **Goal:** Teach a small network a pattern from examples, then ask it to predict — and,
 if you have a graphics card, train on it.
@@ -56,16 +56,6 @@ big = neural_network(inputs: 4, hidden: [16, 12, 8], outputs: 3)
 `brain.predict(row)` returns a list — one number per output — so read a single output with
 `brain.predict(row)[0]`.
 
-## A real task
-
-XOR is a toy. [`classify.pt`](../../examples/classify.pt) is closer to real machine
-learning: it makes a training set from random points, learns "is this point inside a
-circle?", then **scores its accuracy on fresh points it never trained on**.
-
-```bash
-plaintext run examples/classify.pt
-```
-
 ## Save a trained brain
 
 Training takes time, so save the result and load it back later — even in another program:
@@ -76,7 +66,7 @@ smart = load_network("brain.ai")
 print(smart.predict([1, 0]))
 ```
 
-See [`remember.pt`](../../examples/remember.pt) for the full round-trip.
+[`learn.pt`](../../examples/learn.pt) trains XOR (with `device: auto`), then saves and reloads.
 
 ## Load data from a file
 
@@ -92,7 +82,7 @@ brain.train(examples, answers, epochs: 500, optimizer: adam)
 
 A header row of column names is skipped for you. `read_csv("file.csv")` is the simpler tool when
 you just want the raw rows of numbers. [`dataset.pt`](../../examples/dataset.pt) trains on a real
-CSV of 300 labelled points.
+CSV of labelled points, then **scores accuracy on fresh random points** it never trained on.
 
 ## Neuroevolution — learning with no answers
 
@@ -140,32 +130,21 @@ brain = neural_network(inputs: 2, hidden: [16, 12], outputs: 1, device: auto)
 
 If the GPU can't be opened (say you ask for `cuda` with no NVIDIA card), training **falls
 back to the CPU and says so** rather than failing. GPUs pay off for large networks — for a
-tiny one like XOR the CPU is actually faster, since there's barely any work to speed up.
+tiny one like XOR the CPU is often faster. [`learn.pt`](../../examples/learn.pt) and
+[`dataset.pt`](../../examples/dataset.pt) both use `device: auto`.
 
-```bash
-plaintext run examples/gpu_learn.pt
-```
-
-## Watch it learn
-
-Because you can run a single round at a time with `brain.train_once(...)`, training fits
-inside a game loop and can draw its own progress:
-
-```bash
-plaintext run examples/watch_learn.pt
-```
+You can also drive training from a game loop with `brain.train_once(...)` if you want to draw
+progress yourself — see the language reference.
 
 ## Practice
 
 | Example | Idea |
 |---------|------|
-| [`learn.pt`](../../examples/learn.pt) | Train XOR from scratch |
-| [`classify.pt`](../../examples/classify.pt) | A real task + an accuracy score |
-| [`remember.pt`](../../examples/remember.pt) | `save` and `load_network` |
-| [`dataset.pt`](../../examples/dataset.pt) | Train from a `.csv` file |
-| [`gpu_learn.pt`](../../examples/gpu_learn.pt) | Train on a GPU |
-| [`watch_learn.pt`](../../examples/watch_learn.pt) | Watch it learn live |
-| [`evolve.pt`](../../examples/evolve.pt) | Neuroevolution — a game agent that learns to play |
+| [`learn.pt`](../../examples/learn.pt) | XOR + GPU auto + save / load |
+| [`dataset.pt`](../../examples/dataset.pt) | CSV training + accuracy score |
+| [`evolve.pt`](../../examples/evolve.pt) | Neuroevolution in a window |
+
+Full index: [`examples/README.md`](../../examples/README.md).
 
 ## Common mistakes
 
@@ -178,11 +157,7 @@ plaintext run examples/watch_learn.pt
 
 ## That's the tour
 
-Where to go from here:
+You've seen the main toolkit. Keep building — and when something breaks, check
+[troubleshooting](../troubleshooting.md).
 
-1. Keep the [cheatsheet](../cheatsheet.md) open while you write.
-2. Reach for the [language reference](../language-reference.md) when you need an API detail.
-3. Copy freely from [`examples/`](../../examples/).
-4. If something breaks, check [troubleshooting](../troubleshooting.md).
-
-**Previous:** [Desktop UI ←](11-ui.md) · [Docs home ↑](../README.md)
+**Previous:** [Game kit ←](12-game-kit.md) · **Next:** [Talking to the web →](14-web.md)

@@ -1,0 +1,128 @@
+// A small platformer built with `import gamekit`.
+// Arrow keys / A-D to run, SPACE / W / UP to jump, Z to attack.
+// Stomp enemies from above, or hit them with your attack box.
+// Run with:  plaintext run examples/platformer.pt
+
+import gamekit
+
+world = physics_world(gravity: 2200)
+
+ground = body(x: 0, y: 560, width: 800, height: 40, solid: true, static: true)
+ledge = body(x: 480, y: 420, width: 200, height: 24, solid: true, static: true)
+
+hero = body(x: 80, y: 400, width: 28, height: 40, solid: true)
+enemy = body(x: 520, y: 360, width: 28, height: 36, solid: true)
+
+hero_hurt = hitbox(owner: hero, offset_x: 2, offset_y: 4, width: 24, height: 34, kind: "hurt")
+hero_attack = hitbox(owner: hero, offset_x: 22, offset_y: 10, width: 26, height: 18, kind: "attack", active: false)
+enemy_hurt = hitbox(owner: enemy, offset_x: 2, offset_y: 2, width: 24, height: 32, kind: "hurt")
+
+world.add(ground)
+world.add(ledge)
+world.add(hero)
+world.add(enemy)
+world.add(hero_hurt)
+world.add(hero_attack)
+world.add(enemy_hurt)
+
+enemy_alive = true
+enemy_dir = -1
+score = 0
+lives = 3
+facing = 1
+
+game "Platformer" (width: 800, height: 600) {
+    on update(delta) {
+        speed = 260
+        if key_down("left") or key_down("a") {
+            hero.vx = -speed
+            facing = -1
+        } else if key_down("right") or key_down("d") {
+            hero.vx = speed
+            facing = 1
+        } else {
+            hero.vx = 0
+        }
+
+        if pressed("jump") {
+            hero.jump(720)
+        }
+
+        hero_attack.active = key_down("z") or key_down("j")
+        if facing is 1 {
+            hero_attack.offset_x = 22
+        } else {
+            hero_attack.offset_x = -20
+        }
+
+        if enemy_alive {
+            enemy.vx = 80 * enemy_dir
+            if enemy.x is less than 480 {
+                enemy_dir = 1
+            }
+            if enemy.x is more than 652 {
+                enemy_dir = -1
+            }
+        } else {
+            enemy.vx = 0
+        }
+
+        world.step(delta)
+
+        if hero.y is more than 700 {
+            decrease lives by 1
+            hero.x = 80
+            hero.y = 400
+            hero.set_velocity(0, 0)
+        }
+
+        if enemy_alive {
+            stomped = false
+            if hero.vy is more than 0 and overlaps(hero_hurt, enemy_hurt) {
+                if hero.center_y is less than enemy.center_y {
+                    stomped = true
+                    enemy_alive = false
+                    increase score by 100
+                    hero.vy = -420
+                }
+            }
+            if not stomped {
+                if world.hits(hero_attack, enemy_hurt) {
+                    enemy_alive = false
+                    increase score by 100
+                } else if overlaps(hero_hurt, enemy_hurt) {
+                    decrease lives by 1
+                    hero.x = 80
+                    hero.y = 400
+                    hero.set_velocity(0, 0)
+                }
+            }
+        }
+
+        if lives is at most 0 {
+            lives = 3
+            score = 0
+            enemy_alive = true
+            enemy.x = 520
+            enemy.y = 360
+        }
+    }
+
+    on draw() {
+        clear_screen(skyblue)
+        draw_body(ground, gray)
+        draw_body(ledge, darkgray)
+        draw_body(hero, blue)
+        if enemy_alive {
+            draw_body(enemy, red)
+        }
+        // Outlines every hitbox (hurt vs attack) — hold H to tune collisions.
+        if key_down("h") {
+            draw_hitboxes(world)
+        } else if hero_attack.active {
+            draw_hitbox(hero_attack, orange)
+        }
+        draw_text("Score {score}   Lives {lives}", 16, 16, 24, black)
+        draw_text("Arrows/A-D move  Space jump  Z attack  H hitboxes", 16, 48, 18, black)
+    }
+}

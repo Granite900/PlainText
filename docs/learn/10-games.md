@@ -69,15 +69,16 @@ Play a sound with `play_sound(beep)`. Sizes come from `sprite_width(ship)` / `sp
 `.pt` file's folder. Keep images in an `assets/` folder next to your program and run from there.
 PNG images, WAV/OGG sounds, and TTF fonts are supported.
 
-## Practice — play these in order
+## Practice — play these
 
 | Example | Idea |
 |---------|------|
-| [`bounce.pt`](../../examples/bounce.pt) | Physics + arrow keys |
-| [`sprites.pt`](../../examples/sprites.pt) | Images |
 | [`timers.pt`](../../examples/timers.pt) | `after` / `every` |
-| [`spawner.pt`](../../examples/spawner.pt) | Timers spawning objects |
 | [`catch.pt`](../../examples/catch.pt) | Full arcade loop (score, lives, restart) |
+| [`platformer.pt`](../../examples/platformer.pt) | Gravity + hitboxes via `import gamekit` (lesson 12) |
+
+Sprites (`load_sprite`, `draw_sprite_rotated`, …) are in the section above; UI examples
+[`counter.pt`](../../examples/counter.pt) and [`form.pt`](../../examples/form.pt) also load images.
 
 ```bash
 plaintext run examples/catch.pt

@@ -1,16 +1,20 @@
 {
   "name": "plaintext-lang",
   "displayName": "PlainText Language",
-  "description": "Syntax highlighting for the PlainText programming language (.pt).",
-  "version": "2.4.0",
+  "description": "Syntax highlighting and language server for the PlainText programming language (.pt).",
+  "version": "2.8.0",
   "publisher": "plaintext",
   "icon": "icons/pt.png",
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Programming Languages"
   ],
+  "activationEvents": [
+    "onLanguage:pt"
+  ],
+  "main": "./extension.js",
   "contributes": {
     "languages": [
       {
@@ -35,6 +39,30 @@
         "scopeName": "source.pt",
         "path": "./syntaxes/plaintext.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "PlainText",
+      "properties": {
+        "plaintext.path": {
+          "type": "string",
+          "default": "plaintext",
+          "description": "Path to the plaintext executable. Must be on PATH (or an absolute path) so the language server can run `plaintext lsp`."
+        },
+        "plaintext.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace communication between VS Code and the PlainText language server."
+        }
+      }
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   }
 }

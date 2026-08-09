@@ -6,7 +6,7 @@ lookup** for syntax, types, the standard library, games, and UI.
 **New here?** Start with the [lesson path](README.md) instead — then come back when you need
 detail. Keep the [cheatsheet](cheatsheet.md) open while you code.
 
-It assumes you can run programs with `plaintext run yourfile.pt` (version **2.4.0+**).
+It assumes you can run programs with `plaintext run yourfile.pt` (version **2.8.0+**).
 
 ## Contents
 
@@ -23,10 +23,12 @@ It assumes you can run programs with `plaintext run yourfile.pt` (version **2.4.
 11. [Making a desktop UI](#11-making-a-desktop-ui)
 12. [The standard library at a glance](#12-the-standard-library-at-a-glance)
 13. [Splitting a program across files](#13-splitting-a-program-across-files)
-14. [Neural networks (the ai module)](#14-neural-networks-the-ai-module)
-15. [The REPL](#15-the-repl)
-16. [Building a standalone app](#16-building-a-standalone-app)
-17. [Appendix: when do I have to write a type?](#17-appendix-when-do-i-have-to-write-a-type)
+14. [Game kit (the gamekit module)](#14-game-kit-the-gamekit-module)
+15. [Web and JSON (the web module)](#15-web-and-json-the-web-module)
+16. [Neural networks (the ai module)](#16-neural-networks-the-ai-module)
+17. [The REPL](#17-the-repl)
+18. [Building a standalone app](#18-building-a-standalone-app)
+19. [Appendix: when do I have to write a type?](#19-appendix-when-do-i-have-to-write-a-type)
 
 ---
 
@@ -710,7 +712,70 @@ can't itself contain a `game` or `window` block.)
 
 ---
 
-## 14. Neural networks (the `ai` module)
+## 14. Game kit (the `gamekit` module)
+
+Put `import gamekit` at the top for gravity, solid bodies, and tagged hitboxes. Units are
+pixels and seconds. Collision is axis-aligned boxes only (no slopes or rotation).
+
+```plaintext
+import gamekit
+
+world = physics_world(gravity: 1800)
+hero = body(x: 100, y: 100, width: 28, height: 40, solid: true)
+ground = body(x: 0, y: 560, width: 800, height: 40, solid: true, static: true)
+world.add(hero)
+world.add(ground)
+
+// in on update(delta):
+world.step(delta)
+if pressed("jump") { hero.jump(700) }
+```
+
+**Bodies.** Fields: `x`, `y`, `width`, `height`, `vx`, `vy`, `solid`, `static`, `on_ground`,
+`center_x`, `center_y`. Methods: `move(dx, dy)`, `set_velocity(vx, vy)`, `bump(vx, vy)`,
+`jump(speed)` (optional second arg / `force: true` to jump in mid-air).
+
+**Hitboxes.** `hitbox(owner:, offset_x:, offset_y:, width:, height:, kind:, active:)`.
+`kind` is text (`"hurt"`, `"attack"`, …). Methods: `overlaps(other)`. World helpers:
+`world.hits(attack, hurt)` (once per swing), free function `overlaps(a, b)`.
+
+**Drawing.** `draw_body(body, color)`, `draw_hitbox(hitbox, color)`, `draw_hitboxes(world)`.
+
+**Input.** `pressed("jump")` — edge-trigger with aliases (`jump` → space/up/w).
+
+See [`examples/platformer.pt`](../examples/platformer.pt) (hold **H** to outline hitboxes)
+and [lesson 12](learn/12-game-kit.md).
+
+---
+
+## 15. Web and JSON (the `web` module)
+
+Put `import web` at the top for HTTP and JSON helpers.
+
+**Security note:** these calls can reach the real network. Only request URLs you trust.
+Local file paths (anything that is not `http://` or `https://`) are read from disk so
+examples and CI can run offline.
+
+```plaintext
+import web
+
+page = web.get("https://example.com")                 // response body as Text
+data = web.get_json("examples/fixtures/sample.json")  // dictionary / list / …
+web.post_json(url, dictionary { "a": 1 })             // POST JSON; returns Text body
+
+text = to_json(dictionary { "name": "Ada" })
+value = parse_json("{\"x\": 1}")
+```
+
+`to_json` / `parse_json` convert between PlainText values and JSON text. Supported values:
+numbers, text, booleans, `nothing`, lists, and dictionaries. Timeouts and network failures
+produce readable diagnostics.
+
+See [`examples/fetch.pt`](../examples/fetch.pt) and [lesson 14](learn/14-web.md).
+
+---
+
+## 16. Neural networks (the `ai` module)
 
 Put `import ai` at the top to train a small neural network: it learns a pattern from
 example → answer pairs, then predicts answers for new inputs.
@@ -750,8 +815,8 @@ optional:
 
 `examples` and `answers` are lists of lists of numbers; they must line up (same count, and each row
 the right width for the network's inputs and outputs). You don't have to type them out by hand —
-[`examples/classify.pt`](../examples/classify.pt) builds its training set from random points and then
-scores the trained network's accuracy on fresh ones.
+[`examples/dataset.pt`](../examples/dataset.pt) loads a CSV and then scores accuracy on fresh
+random points.
 
 **Training on a GPU.** Add `device:` when you build the network to train on a graphics card:
 
@@ -785,7 +850,7 @@ on update(delta) {
 }
 ```
 
-(See [`examples/watch_learn.pt`](../examples/watch_learn.pt) for the full live demo.)
+For a live population of agents instead, see [`examples/evolve.pt`](../examples/evolve.pt).
 
 **Using and saving.**
 
@@ -795,7 +860,7 @@ score  = brain.loss(examples, answers)    // current average error, without trai
 brain.save("brain.ai")                    // later:  brain = load_network("brain.ai")
 ```
 
-[`examples/remember.pt`](../examples/remember.pt) trains a network, saves it, and loads it straight
+[`examples/learn.pt`](../examples/learn.pt) trains a network, saves it, and loads it straight
 back to show the trained brain survives a round-trip.
 
 **Loading a dataset from a file.** Instead of typing examples and answers out by hand, keep them
@@ -845,7 +910,7 @@ large images or text. Targets train best scaled to the 0–1 range.
 
 ---
 
-## 15. The REPL
+## 17. The REPL
 
 Run `plaintext repl` for an interactive session. Type an expression to see its value; anything
 you define sticks around for later lines. Multi-line blocks (functions, `if`, …) keep reading
@@ -861,7 +926,7 @@ HI
 
 ---
 
-## 16. Building a standalone app
+## 18. Building a standalone app
 
 `plaintext build game.pt` turns your program into a single executable your friends can run
 **without installing PlainText** — it bundles your code (and every file it imports) into a copy
@@ -891,7 +956,7 @@ separate, paid step.)
 
 ---
 
-## 17. Appendix: when do I have to write a type?
+## 19. Appendix: when do I have to write a type?
 
 Almost never. You only need an explicit type when PlainText genuinely can't infer one:
 

@@ -147,6 +147,46 @@ window "Title" (width: 420, height: 320) {
 }
 ```
 
+## Game kit (`import gamekit`)
+
+```plaintext
+import gamekit
+
+world = physics_world(gravity: 1800)
+hero = body(x: 100, y: 100, width: 28, height: 40, solid: true)
+ground = body(x: 0, y: 560, width: 800, height: 40, solid: true, static: true)
+hurt = hitbox(owner: hero, width: 28, height: 40, kind: "hurt")
+attack = hitbox(owner: hero, offset_x: 24, width: 28, height: 20, kind: "attack", active: false)
+
+world.add(hero)
+world.add(ground)
+world.add(hurt)
+world.add(attack)
+
+world.step(delta)
+if pressed("jump") { hero.jump(700) }
+attack.active = key_down("z")
+if world.hits(attack, enemy_hurt) { /* once per swing */ }
+
+draw_body(hero, blue)
+draw_hitboxes(world)
+```
+
+## Web (`import web`)
+
+```plaintext
+import web
+
+data = web.get_json("examples/fixtures/sample.json")  // or an https:// URL
+page = web.get("https://example.com")
+web.post_json(url, dictionary { "a": 1 })
+
+text = to_json(dictionary { "name": "Ada" })
+value = parse_json("{\"x\": 1}")
+```
+
+Local paths work offline; `http://` / `https://` talk to the network.
+
 ## Neural networks (`import ai`)
 
 ```plaintext

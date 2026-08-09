@@ -1,0 +1,41 @@
+// HTTP + JSON with `import web`.
+// This example runs offline by reading a local JSON fixture (CI-friendly).
+// Run from the repo root:  plaintext run examples/fetch.pt
+//
+// To try a live API instead, uncomment the live_url block near the bottom
+// (needs network access).
+
+import web
+
+fixture = "examples/fixtures/sample.json"
+
+// web.get / web.get_json accept http(s) URLs — or a local file path for demos.
+raw = web.get(fixture)
+print("raw body:")
+print(raw)
+
+data = web.get_json(fixture)
+print("name: {data["name"]}")
+print("score: {data["score"]}")
+print("ok: {data["ok"]}")
+print("first tag: {data["tags"][0]}")
+print("level: {data["meta"]["level"]}")
+
+// Free helpers: PlainText values ↔ JSON text.
+payload = dictionary {
+    "greeting": "hello",
+    "n": 7,
+    "ready": true
+}
+text = to_json(payload)
+print("to_json → {text}")
+again = parse_json(text)
+print("round-trip greeting: {again["greeting"]}")
+
+// --- Live API (optional; needs the internet) ---
+// live_url = "https://httpbin.org/json"
+// live = web.get_json(live_url)
+// print(live)
+//
+// reply = web.post_json("https://httpbin.org/post", dictionary { "from": "PlainText" })
+// print(reply)

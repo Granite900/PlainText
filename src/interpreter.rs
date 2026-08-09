@@ -155,6 +155,9 @@ impl Interpreter {
                 env_declare(&self.globals, word, Value::text(word));
             }
         }
+        if self.imports.contains("web") {
+            crate::web::install(&self.globals);
+        }
     }
 
     /// Advance all timers by `dt` seconds, firing any that come due. Called once
@@ -666,6 +669,20 @@ impl Interpreter {
                         inst.fields.insert(name.clone(), value);
                         Ok(())
                     }
+                    Value::Body(b) => self.set_body_field(&b, name, value, *span),
+                    Value::Hitbox(h) => self.set_hitbox_field(&h, name, value, *span),
+                    Value::PhysicsWorld(w) => {
+                        if name == "gravity" {
+                            w.borrow_mut().gravity = self.as_number(&value, *span)?;
+                            Ok(())
+                        } else {
+                            Err(Diagnostic::new(
+                                *span,
+                                format!("a physics world has no field `{}`", name),
+                            )
+                            .with_hint("worlds have gravity; use methods like .add / .step"))
+                        }
+                    }
                     other => Err(Diagnostic::new(
                         *span,
                         format!("can't set field `{}` on a {}", name, other.type_name()),
@@ -825,6 +842,14 @@ impl Interpreter {
             if b.is_ai() && !self.imports.contains("ai") {
                 return Err(Diagnostic::new(span, format!("`{}` needs the ai module", name))
                     .with_hint("add `import ai` at the top of your file"));
+            }
+            if b.is_gamekit() && !self.imports.contains("gamekit") {
+                return Err(Diagnostic::new(span, format!("`{}` needs the gamekit module", name))
+                    .with_hint("add `import gamekit` at the top of your file"));
+            }
+            if b.is_web() && !self.imports.contains("web") {
+                return Err(Diagnostic::new(span, format!("`{}` needs the web module", name))
+                    .with_hint("add `import web` at the top of your file"));
             }
             return Ok(Value::Builtin(b));
         }
@@ -1008,11 +1033,21 @@ impl Interpreter {
                     format!("`{}` has no field or method `{}`", inst_ref.def.name, name),
                 ))
             }
+            Value::Body(b) => self.get_body_field(b, name, span),
+            Value::Hitbox(h) => self.get_hitbox_field(h, name, span),
+            Value::PhysicsWorld(w) => match name {
+                "gravity" => Ok(Value::Number(w.borrow().gravity)),
+                _ => Err(Diagnostic::new(
+                    span,
+                    format!("a physics world has no field `{}`", name),
+                )
+                .with_hint("use methods: .add, .step, .hits, .sync_hitboxes")),
+            },
             _ => Err(Diagnostic::new(
                 span,
                 format!("a {} has no field `{}`", obj.type_name(), name),
             )
-            .with_hint("methods like `.length()` must be called; field access works on classes")),
+            .with_hint("methods like `.length()` must be called; field access works on classes and gamekit bodies")),
         }
     }
 
@@ -1164,10 +1199,44 @@ impl Interpreter {
             Value::Text(s) => self.text_method(s, name, args, span),
             Value::Dictionary(map) => self.map_method(map, name, args, span),
             Value::Network(net) => self.network_method(&net.clone(), name, args, span),
+            Value::Body(b) => self.body_method(&b.clone(), name, args, span),
+            Value::Hitbox(h) => self.hitbox_method(&h.clone(), name, args, span),
+            Value::PhysicsWorld(w) => self.world_method(&w.clone(), name, args, span),
+            Value::WebModule => self.web_method(name, args, span),
             other => Err(Diagnostic::new(
                 span,
                 format!("a {} has no method `{}`", other.type_name(), name),
             )),
+        }
+    }
+
+    fn web_method(&mut self, name: &str, args: Vec<Value>, span: Span) -> EvalResult {
+        if !self.imports.contains("web") {
+            return Err(Diagnostic::new(span, format!("`web.{}` needs the web module", name))
+                .with_hint("add `import web` at the top of your file"));
+        }
+        match name {
+            "get" => {
+                self.expect_arity("get", &args, 1, span)?;
+                let url = self.as_text(&args[0], span)?;
+                let body = crate::web::http_get(&url, span)?;
+                Ok(Value::text(body))
+            }
+            "get_json" => {
+                self.expect_arity("get_json", &args, 1, span)?;
+                let url = self.as_text(&args[0], span)?;
+                crate::web::http_get_json(&url, span)
+            }
+            "post_json" => {
+                self.expect_arity("post_json", &args, 2, span)?;
+                let url = self.as_text(&args[0], span)?;
+                let body = crate::web::http_post_json(&url, &args[1], span)?;
+                Ok(Value::text(body))
+            }
+            _ => Err(Diagnostic::new(
+                span,
+                format!("web has no method `{}`", name),
+            ).with_hint("try `get`, `get_json`, or `post_json`")),
         }
     }
 
@@ -1541,6 +1610,229 @@ impl Interpreter {
             }
             _ => Err(Diagnostic::new(span, format!("a neural network has no method `{}`", name))
                 .with_hint("networks have train, train_once, predict, loss, save")),
+        }
+    }
+
+    fn get_body_field(&self, b: &Rc<RefCell<crate::gamekit::Body>>, name: &str, span: Span) -> EvalResult {
+        let b = b.borrow();
+        Ok(match name {
+            "x" => Value::Number(b.x),
+            "y" => Value::Number(b.y),
+            "width" => Value::Number(b.width),
+            "height" => Value::Number(b.height),
+            "vx" => Value::Number(b.vx),
+            "vy" => Value::Number(b.vy),
+            "solid" => Value::Bool(b.solid),
+            "static" => Value::Bool(b.is_static),
+            "on_ground" => Value::Bool(b.on_ground),
+            "center_x" => Value::Number(b.center_x()),
+            "center_y" => Value::Number(b.center_y()),
+            _ => {
+                return Err(Diagnostic::new(span, format!("a body has no field `{}`", name))
+                    .with_hint("bodies have x, y, width, height, vx, vy, solid, static, on_ground"));
+            }
+        })
+    }
+
+    fn set_body_field(
+        &self,
+        b: &Rc<RefCell<crate::gamekit::Body>>,
+        name: &str,
+        value: Value,
+        span: Span,
+    ) -> Result<(), Diagnostic> {
+        let mut b = b.borrow_mut();
+        match name {
+            "x" => b.x = self.as_number(&value, span)?,
+            "y" => b.y = self.as_number(&value, span)?,
+            "width" => b.width = self.as_number(&value, span)?.max(0.0),
+            "height" => b.height = self.as_number(&value, span)?.max(0.0),
+            "vx" => b.vx = self.as_number(&value, span)?,
+            "vy" => b.vy = self.as_number(&value, span)?,
+            "solid" => b.solid = self.as_bool_val(&value, span)?,
+            "static" => b.is_static = self.as_bool_val(&value, span)?,
+            "on_ground" => b.on_ground = self.as_bool_val(&value, span)?,
+            _ => {
+                return Err(Diagnostic::new(span, format!("can't set field `{}` on a body", name)));
+            }
+        }
+        Ok(())
+    }
+
+    fn get_hitbox_field(&self, h: &Rc<RefCell<crate::gamekit::Hitbox>>, name: &str, span: Span) -> EvalResult {
+        let h = h.borrow();
+        Ok(match name {
+            "offset_x" => Value::Number(h.offset_x),
+            "offset_y" => Value::Number(h.offset_y),
+            "width" => Value::Number(h.width),
+            "height" => Value::Number(h.height),
+            "kind" => Value::text(h.kind.clone()),
+            "active" => Value::Bool(h.active),
+            "x" => Value::Number(h.world_xy().0),
+            "y" => Value::Number(h.world_xy().1),
+            _ => {
+                return Err(Diagnostic::new(span, format!("a hitbox has no field `{}`", name))
+                    .with_hint("hitboxes have offset_x, offset_y, width, height, kind, active"));
+            }
+        })
+    }
+
+    fn set_hitbox_field(
+        &self,
+        h: &Rc<RefCell<crate::gamekit::Hitbox>>,
+        name: &str,
+        value: Value,
+        span: Span,
+    ) -> Result<(), Diagnostic> {
+        let mut h = h.borrow_mut();
+        match name {
+            "offset_x" => h.offset_x = self.as_number(&value, span)?,
+            "offset_y" => h.offset_y = self.as_number(&value, span)?,
+            "width" => h.width = self.as_number(&value, span)?.max(0.0),
+            "height" => h.height = self.as_number(&value, span)?.max(0.0),
+            "kind" => h.kind = self.as_text(&value, span)?,
+            "active" => h.active = self.as_bool_val(&value, span)?,
+            _ => {
+                return Err(Diagnostic::new(span, format!("can't set field `{}` on a hitbox", name)));
+            }
+        }
+        Ok(())
+    }
+
+    fn body_method(
+        &mut self,
+        body: &Rc<RefCell<crate::gamekit::Body>>,
+        name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> EvalResult {
+        match name {
+            "move" => {
+                self.expect_arity(name, &args, 2, span)?;
+                let dx = self.as_number(&args[0], span)?;
+                let dy = self.as_number(&args[1], span)?;
+                body.borrow_mut().move_by(dx, dy);
+                Ok(Value::Nothing)
+            }
+            "set_velocity" => {
+                self.expect_arity(name, &args, 2, span)?;
+                let vx = self.as_number(&args[0], span)?;
+                let vy = self.as_number(&args[1], span)?;
+                body.borrow_mut().set_velocity(vx, vy);
+                Ok(Value::Nothing)
+            }
+            "bump" => {
+                self.expect_arity(name, &args, 2, span)?;
+                let vx = self.as_number(&args[0], span)?;
+                let vy = self.as_number(&args[1], span)?;
+                body.borrow_mut().bump(vx, vy);
+                Ok(Value::Nothing)
+            }
+            "jump" => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(Diagnostic::new(span, "jump takes a speed, and optional force: true")
+                        .with_hint("hero.jump(700)"));
+                }
+                let speed = self.as_number(&args[0], span)?;
+                let force = match args.get(1) {
+                    Some(Value::Dictionary(_)) => self.opt_bool(args.get(1), "force", false, span)?,
+                    Some(v) => self.as_bool_val(v, span)?,
+                    None => false,
+                };
+                Ok(Value::Bool(body.borrow_mut().jump(speed, force)))
+            }
+            _ => Err(Diagnostic::new(span, format!("a body has no method `{}`", name))
+                .with_hint("bodies have move, set_velocity, bump, jump")),
+        }
+    }
+
+    fn hitbox_method(
+        &mut self,
+        hb: &Rc<RefCell<crate::gamekit::Hitbox>>,
+        name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> EvalResult {
+        match name {
+            "overlaps" => {
+                self.expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Hitbox(other) => Ok(Value::Bool(crate::gamekit::hitboxes_overlap(
+                        &hb.borrow(),
+                        &other.borrow(),
+                    ))),
+                    other => Err(Diagnostic::new(
+                        span,
+                        format!("overlaps needs a hitbox, got a {}", other.type_name()),
+                    )),
+                }
+            }
+            _ => Err(Diagnostic::new(span, format!("a hitbox has no method `{}`", name))
+                .with_hint("hitboxes have overlaps(other)")),
+        }
+    }
+
+    fn world_method(
+        &mut self,
+        world: &Rc<RefCell<crate::gamekit::World>>,
+        name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> EvalResult {
+        match name {
+            "add" => {
+                self.expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Body(b) => world.borrow_mut().add_body(b.clone()),
+                    Value::Hitbox(h) => world.borrow_mut().add_hitbox(h.clone()),
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("world.add needs a body or hitbox, got a {}", other.type_name()),
+                        ));
+                    }
+                }
+                Ok(Value::Nothing)
+            }
+            "step" => {
+                self.expect_arity(name, &args, 1, span)?;
+                let delta = self.as_number(&args[0], span)?;
+                world.borrow_mut().step(delta);
+                Ok(Value::Nothing)
+            }
+            "sync_hitboxes" => {
+                // Hitboxes follow their owner automatically; kept for readable call sites.
+                self.expect_arity(name, &args, 0, span)?;
+                Ok(Value::Nothing)
+            }
+            "hits" => {
+                self.expect_arity(name, &args, 2, span)?;
+                match (&args[0], &args[1]) {
+                    (Value::Hitbox(a), Value::Hitbox(h)) => {
+                        Ok(Value::Bool(world.borrow_mut().hits(a, h)))
+                    }
+                    _ => Err(Diagnostic::new(span, "world.hits needs an attack hitbox and a hurt hitbox")),
+                }
+            }
+            _ => Err(Diagnostic::new(span, format!("a physics world has no method `{}`", name))
+                .with_hint("worlds have add, step, hits, sync_hitboxes")),
+        }
+    }
+
+    fn as_bool_val(&self, v: &Value, span: Span) -> Result<bool, Diagnostic> {
+        match v {
+            Value::Bool(b) => Ok(*b),
+            other => Err(Diagnostic::new(
+                span,
+                format!("expected true or false, got a {}", other.type_name()),
+            )),
+        }
+    }
+
+    fn opt_bool(&self, opts: Option<&Value>, key: &str, default: bool, span: Span) -> Result<bool, Diagnostic> {
+        match dict_get(opts, key) {
+            Some(v) => self.as_bool_val(&v, span),
+            None => Ok(default),
         }
     }
 
@@ -2207,6 +2499,177 @@ impl Interpreter {
                 }
                 Ok(Value::Network(brains[best].clone()))
             }
+            Builtin::PhysicsWorld => {
+                let o = args.first();
+                let gravity = self.opt_number(o, "gravity", 1800.0, span)?;
+                Ok(Value::PhysicsWorld(Rc::new(RefCell::new(crate::gamekit::World::new(gravity)))))
+            }
+            Builtin::Body => {
+                let o = args.first();
+                let x = self.opt_number(o, "x", 0.0, span)?;
+                let y = self.opt_number(o, "y", 0.0, span)?;
+                let width = self.opt_number(o, "width", 32.0, span)?.max(0.0);
+                let height = self.opt_number(o, "height", 32.0, span)?.max(0.0);
+                let mut body = crate::gamekit::Body::new(x, y, width, height);
+                if let Some(v) = dict_get(o, "solid") {
+                    body.solid = self.as_bool_val(&v, span)?;
+                }
+                if let Some(v) = dict_get(o, "static") {
+                    body.is_static = self.as_bool_val(&v, span)?;
+                }
+                if let Some(v) = dict_get(o, "vx") {
+                    body.vx = self.as_number(&v, span)?;
+                }
+                if let Some(v) = dict_get(o, "vy") {
+                    body.vy = self.as_number(&v, span)?;
+                }
+                Ok(Value::Body(Rc::new(RefCell::new(body))))
+            }
+            Builtin::Hitbox => {
+                let o = args.first();
+                let owner = match dict_get(o, "owner") {
+                    Some(Value::Body(b)) => Some(b),
+                    Some(other) => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("hitbox owner needs a body, got a {}", other.type_name()),
+                        ));
+                    }
+                    None => None,
+                };
+                let ox = self.opt_number(o, "offset_x", 0.0, span)?;
+                let oy = self.opt_number(o, "offset_y", 0.0, span)?;
+                let width = self.opt_number(o, "width", 32.0, span)?.max(0.0);
+                let height = self.opt_number(o, "height", 32.0, span)?.max(0.0);
+                let kind = match dict_get(o, "kind") {
+                    Some(v) => self.as_text(&v, span)?,
+                    None => "hurt".into(),
+                };
+                let active = match dict_get(o, "active") {
+                    Some(v) => self.as_bool_val(&v, span)?,
+                    None => true,
+                };
+                Ok(Value::Hitbox(Rc::new(RefCell::new(crate::gamekit::Hitbox::new(
+                    owner, ox, oy, width, height, kind, active,
+                )))))
+            }
+            Builtin::Overlaps => {
+                self.expect_arity("overlaps", &args, 2, span)?;
+                match (&args[0], &args[1]) {
+                    (Value::Hitbox(a), Value::Hitbox(b)) => {
+                        Ok(Value::Bool(crate::gamekit::hitboxes_overlap(&a.borrow(), &b.borrow())))
+                    }
+                    _ => Err(Diagnostic::new(span, "overlaps needs two hitboxes")),
+                }
+            }
+            Builtin::Pressed => {
+                self.expect_arity("pressed", &args, 1, span)?;
+                let key = self.as_text(&args[0], span)?.to_lowercase();
+                let aliases = key_aliases(&key);
+                let bridge = self.gfx.as_ref().ok_or_else(|| {
+                    Diagnostic::new(span, "pressed() only works inside a game window")
+                })?;
+                let g = bridge.borrow();
+                let down = g.keys_pressed.contains(&key)
+                    || aliases.iter().any(|k| g.keys_pressed.contains(*k));
+                Ok(Value::Bool(down))
+            }
+            Builtin::DrawBody => {
+                self.expect_arity("draw_body", &args, 2, span)?;
+                let body = match &args[0] {
+                    Value::Body(b) => b.borrow(),
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("draw_body needs a body, got a {}", other.type_name()),
+                        ));
+                    }
+                };
+                let color = self.as_color(&args[1], span)?;
+                let gfx = self.gfx.as_ref().ok_or_else(|| {
+                    Diagnostic::new(span, "draw_body only works inside a game window")
+                })?;
+                gfx.borrow_mut().draw.push(crate::gfx::DrawCmd::Rect {
+                    x: body.x as f32,
+                    y: body.y as f32,
+                    w: body.width as f32,
+                    h: body.height as f32,
+                    color,
+                });
+                Ok(Value::Nothing)
+            }
+            Builtin::DrawHitbox => {
+                self.expect_arity("draw_hitbox", &args, 2, span)?;
+                let hb = match &args[0] {
+                    Value::Hitbox(h) => h.borrow(),
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("draw_hitbox needs a hitbox, got a {}", other.type_name()),
+                        ));
+                    }
+                };
+                let color = self.as_color(&args[1], span)?;
+                let (x, y, w, h) = hb.world_rect();
+                let gfx = self.gfx.as_ref().ok_or_else(|| {
+                    Diagnostic::new(span, "draw_hitbox only works inside a game window")
+                })?;
+                push_outline(&mut gfx.borrow_mut().draw, x, y, w, h, color);
+                Ok(Value::Nothing)
+            }
+            Builtin::DrawHitboxes => {
+                self.expect_arity("draw_hitboxes", &args, 1, span)?;
+                let world = match &args[0] {
+                    Value::PhysicsWorld(w) => w.borrow(),
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("draw_hitboxes needs a physics world, got a {}", other.type_name()),
+                        ));
+                    }
+                };
+                let gfx = self.gfx.as_ref().ok_or_else(|| {
+                    Diagnostic::new(span, "draw_hitboxes only works inside a game window")
+                })?;
+                let mut g = gfx.borrow_mut();
+                for hb in world.hitboxes() {
+                    let h = hb.borrow();
+                    if !h.active {
+                        continue;
+                    }
+                    let (x, y, w, ht) = h.world_rect();
+                    let color = match h.kind.as_str() {
+                        "attack" => crate::gfx::Color(220, 60, 60, 200),
+                        "pickup" => crate::gfx::Color(60, 200, 80, 200),
+                        _ => crate::gfx::Color(60, 140, 220, 200),
+                    };
+                    push_outline(&mut g.draw, x, y, w, ht, color);
+                }
+                Ok(Value::Nothing)
+            }
+            Builtin::WebGetJson => {
+                self.expect_arity("get_json", &args, 1, span)?;
+                let url = self.as_text(&args[0], span)?;
+                crate::web::http_get_json(&url, span)
+            }
+            Builtin::WebPostJson => {
+                self.expect_arity("post_json", &args, 2, span)?;
+                let url = self.as_text(&args[0], span)?;
+                let body = crate::web::http_post_json(&url, &args[1], span)?;
+                Ok(Value::text(body))
+            }
+            Builtin::ParseJson => {
+                self.expect_arity("parse_json", &args, 1, span)?;
+                let text = self.as_text(&args[0], span)?;
+                crate::web::parse_json(&text, span)
+            }
+            Builtin::ToJson => {
+                self.expect_arity("to_json", &args, 1, span)?;
+                let text = crate::web::to_json(&args[0]).map_err(|e| {
+                    Diagnostic::new(span, format!("couldn't turn that value into JSON: {}", e))
+                })?;
+                Ok(Value::text(text))
+            }
         }
     }
 
@@ -2469,8 +2932,37 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Dictionary(x), Value::Dictionary(y)) => Rc::ptr_eq(x, y),
         (Value::Class(x), Value::Class(y)) => Rc::ptr_eq(x, y),
         (Value::Network(x), Value::Network(y)) => Rc::ptr_eq(x, y),
+        (Value::Body(x), Value::Body(y)) => Rc::ptr_eq(x, y),
+        (Value::Hitbox(x), Value::Hitbox(y)) => Rc::ptr_eq(x, y),
+        (Value::PhysicsWorld(x), Value::PhysicsWorld(y)) => Rc::ptr_eq(x, y),
+        (Value::WebModule, Value::WebModule) => true,
         _ => false,
     }
+}
+
+/// Friendly aliases for `pressed("jump")` etc. (on top of the raw key name).
+fn key_aliases(name: &str) -> Vec<&'static str> {
+    match name {
+        "jump" => vec!["space", "up", "w"],
+        "left" => vec!["left", "a"],
+        "right" => vec!["right", "d"],
+        "up" => vec!["up", "w"],
+        "down" => vec!["down", "s"],
+        "attack" | "strike" => vec!["z", "j", "space"],
+        _ => Vec::new(),
+    }
+}
+
+fn push_outline(cmds: &mut Vec<crate::gfx::DrawCmd>, x: f64, y: f64, w: f64, h: f64, color: crate::gfx::Color) {
+    let t = 2.0f32;
+    let x = x as f32;
+    let y = y as f32;
+    let w = w as f32;
+    let h = h as f32;
+    cmds.push(crate::gfx::DrawCmd::Rect { x, y, w, h: t, color });
+    cmds.push(crate::gfx::DrawCmd::Rect { x, y: y + h - t, w, h: t, color });
+    cmds.push(crate::gfx::DrawCmd::Rect { x, y, w: t, h, color });
+    cmds.push(crate::gfx::DrawCmd::Rect { x: x + w - t, y, w: t, h, color });
 }
 
 /// Whether a type annotation is an optional (`T?`) type.

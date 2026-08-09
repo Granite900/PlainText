@@ -1,6 +1,7 @@
 name: CI
 
-# Verify Windows + macOS release builds on every push / PR to main.
+# Verify Windows + macOS (Apple Silicon + Intel) + Linux release builds
+# on every push / PR to main.
 
 on:
   push:
@@ -15,7 +16,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-          - os: macos-14
+          - os: macos-14          # Apple Silicon
+          - os: macos-15-intel    # Intel Mac (x86_64)
+          - os: ubuntu-latest     # Linux x64
 
     runs-on: ${{ matrix.os }}
 
@@ -29,6 +32,18 @@ jobs:
       - name: Install Windows LLVM (bindgen)
         if: runner.os == 'Windows'
         run: choco install llvm -y
+
+      - name: Install Linux deps (Raylib / bindgen)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config \
+            libclang-dev clang \
+            libasound2-dev \
+            libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev \
+            libgl1-mesa-dev libglu1-mesa-dev \
+            libwayland-dev libxkbcommon-dev
 
       - name: Build release
         shell: bash
@@ -50,14 +65,26 @@ jobs:
             "$BIN" check "$f"
           done
           # Console examples that run to completion (no window, no stdin, no
-          # forever-timer). Games/UI (bounce, catch, counter, evolve, watch_learn),
+          # forever-timer). Games/UI (catch, platformer, counter, form, evolve),
           # ask.pt (stdin) and timers.pt (runs forever) are excluded on purpose.
-          for f in basics cart stdlib list_tools classify remember dataset; do
+          for f in basics stdlib list_tools fetch dataset; do
             echo "run examples/$f.pt"
             "$BIN" run "examples/$f.pt"
           done
-          # Neural-net smoke tests. learn.pt is pure CPU; gpu_learn.pt asks for a
-          # GPU (device: auto) — on the macOS runner that exercises the Metal/MPS
-          # path, and everywhere else it falls back to the CPU with a note.
+          # Neural-net smoke: learn.pt uses device: auto (GPU when available,
+          # CPU fallback elsewhere) and exercises save / load_network.
           "$BIN" run examples/learn.pt
-          "$BIN" run examples/gpu_learn.pt
+
+      - name: Smoke plaintext build
+        shell: bash
+        run: |
+          BIN=./target/release/plaintext
+          EXT=
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BIN=./target/release/plaintext.exe
+            EXT=.exe
+          fi
+          mkdir -p dist-smoke
+          "$BIN" build examples/basics.pt -o "dist-smoke/basics-app${EXT}"
+          chmod +x "dist-smoke/basics-app${EXT}" 2>/dev/null || true
+          "dist-smoke/basics-app${EXT}"

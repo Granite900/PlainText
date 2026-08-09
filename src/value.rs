@@ -28,6 +28,14 @@ pub enum Value {
     /// A neural network (from `import ai`). Holds only numbers, so it can't form
     /// reference cycles and the GC never needs to trace it.
     Network(Rc<RefCell<crate::nn::Net>>),
+    /// Game-kit objects (`import gamekit`). Bodies/hitboxes point at each other
+    /// with `Rc` but not through `Value`, so the cycle GC does not need to
+    /// clear them — they die when nothing in the program holds them.
+    Body(Rc<RefCell<crate::gamekit::Body>>),
+    Hitbox(Rc<RefCell<crate::gamekit::Hitbox>>),
+    PhysicsWorld(Rc<RefCell<crate::gamekit::World>>),
+    /// The `web` helper from `import web` (`web.get`, `web.get_json`, …).
+    WebModule,
     Function(Rc<FunctionObj>),
     /// A method already bound to its receiver, produced by `value.method`.
     BoundMethod { receiver: Box<Value>, func: Rc<FunctionObj> },
@@ -124,6 +132,20 @@ pub enum Builtin {
     Population,
     Evolve,
     BestOf,
+    // Game kit (only usable after `import gamekit`)
+    PhysicsWorld,
+    Body,
+    Hitbox,
+    Overlaps,
+    Pressed,
+    DrawBody,
+    DrawHitbox,
+    DrawHitboxes,
+    // Web (only usable after `import web`)
+    WebGetJson,
+    WebPostJson,
+    ParseJson,
+    ToJson,
 }
 
 impl Builtin {
@@ -187,6 +209,18 @@ impl Builtin {
             Builtin::Population => "population",
             Builtin::Evolve => "evolve",
             Builtin::BestOf => "best_of",
+            Builtin::PhysicsWorld => "physics_world",
+            Builtin::Body => "body",
+            Builtin::Hitbox => "hitbox",
+            Builtin::Overlaps => "overlaps",
+            Builtin::Pressed => "pressed",
+            Builtin::DrawBody => "draw_body",
+            Builtin::DrawHitbox => "draw_hitbox",
+            Builtin::DrawHitboxes => "draw_hitboxes",
+            Builtin::WebGetJson => "get_json",
+            Builtin::WebPostJson => "post_json",
+            Builtin::ParseJson => "parse_json",
+            Builtin::ToJson => "to_json",
         }
     }
 
@@ -195,6 +229,29 @@ impl Builtin {
         matches!(
             self,
             Builtin::NeuralNetwork | Builtin::LoadNetwork | Builtin::Population | Builtin::Evolve | Builtin::BestOf
+        )
+    }
+
+    /// Whether this builtin belongs to the `gamekit` module (`import gamekit`).
+    pub fn is_gamekit(self) -> bool {
+        matches!(
+            self,
+            Builtin::PhysicsWorld
+                | Builtin::Body
+                | Builtin::Hitbox
+                | Builtin::Overlaps
+                | Builtin::Pressed
+                | Builtin::DrawBody
+                | Builtin::DrawHitbox
+                | Builtin::DrawHitboxes
+        )
+    }
+
+    /// Whether this builtin belongs to the `web` module (`import web`).
+    pub fn is_web(self) -> bool {
+        matches!(
+            self,
+            Builtin::WebGetJson | Builtin::WebPostJson | Builtin::ParseJson | Builtin::ToJson
         )
     }
 
@@ -269,6 +326,18 @@ impl Builtin {
             "population" => Builtin::Population,
             "evolve" => Builtin::Evolve,
             "best_of" => Builtin::BestOf,
+            "physics_world" => Builtin::PhysicsWorld,
+            "body" => Builtin::Body,
+            "hitbox" => Builtin::Hitbox,
+            "overlaps" => Builtin::Overlaps,
+            "pressed" => Builtin::Pressed,
+            "draw_body" => Builtin::DrawBody,
+            "draw_hitbox" => Builtin::DrawHitbox,
+            "draw_hitboxes" => Builtin::DrawHitboxes,
+            "get_json" => Builtin::WebGetJson,
+            "post_json" => Builtin::WebPostJson,
+            "parse_json" => Builtin::ParseJson,
+            "to_json" => Builtin::ToJson,
             _ => return None,
         })
     }
@@ -295,6 +364,10 @@ impl Value {
                 "class"
             }
             Value::Network(_) => "neural network",
+            Value::Body(_) => "body",
+            Value::Hitbox(_) => "hitbox",
+            Value::PhysicsWorld(_) => "physics world",
+            Value::WebModule => "web",
             Value::Function(_) | Value::BoundMethod { .. } | Value::Builtin(_) => "function",
         }
     }
@@ -336,6 +409,19 @@ impl Value {
                 let n = n.borrow();
                 format!("<neural network {} → {}>", n.inputs(), n.outputs())
             }
+            Value::Body(b) => {
+                let b = b.borrow();
+                format!("<body at ({}, {})>", format_number(b.x), format_number(b.y))
+            }
+            Value::Hitbox(h) => {
+                let h = h.borrow();
+                format!("<hitbox \"{}\">", h.kind)
+            }
+            Value::PhysicsWorld(w) => {
+                let w = w.borrow();
+                format!("<physics world gravity={}>", format_number(w.gravity))
+            }
+            Value::WebModule => "<web>".into(),
             Value::Function(f) => format!("<function {}>", f.decl.name),
             Value::BoundMethod { func, .. } => format!("<method {}>", func.decl.name),
             Value::Builtin(b) => format!("<builtin {}>", b.name()),

@@ -22,6 +22,11 @@ $vsix = Get-ChildItem (Join-Path $vsixDir "*.vsix") -ErrorAction SilentlyContinu
 if (-not $vsix) {
   Write-Host "No .vsix found - packaging one..."
   Push-Location $vsixDir
+  npm install
+  if ($LASTEXITCODE -ne 0) {
+    Pop-Location
+    Write-Error "npm install failed in editors/vscode"
+  }
   $readme = Get-Content README.md -Raw
   ($readme -replace '\[PlainText\]\(\.\./\.\./README\.md\)', 'PlainText') | Set-Content README.md -NoNewline
   vsce package --allow-missing-repository

@@ -11,8 +11,8 @@ language itself.
 2. Download the zip for your computer:
    - **Windows:** `plaintext-windows-x64.zip`
    - **Mac (Apple Silicon — M1/M2/M3/M4):** `plaintext-macos-arm64.zip`
-   - **Mac (Intel):** build from source for now (see Option B), or use Rosetta with the
-     Apple Silicon build if needed.
+   - **Mac (Intel):** `plaintext-macos-x64.zip`
+   - **Linux x64:** `plaintext-linux-x64.zip`
 3. Unzip it somewhere permanent (your home folder is fine).
 4. Install it so you can type `plaintext` from anywhere:
 
@@ -25,6 +25,15 @@ language itself.
    That does all the fiddly macOS steps for you: it clears Apple's "downloaded from the
    internet" block, makes the binary runnable, and copies `plaintext` into `/usr/local/bin`
    (a folder already on your PATH). It may ask for your login password to copy the file.
+
+   **Linux — one command.** Open a terminal, `cd` into the unzipped folder, and run:
+
+   ```bash
+   bash scripts/install-linux.sh
+   ```
+
+   That makes the binary executable and copies it to `~/.local/bin`. If that folder is not
+   on your PATH yet, the script prints the one line to add to `~/.bashrc`.
 
    **Windows — one command.** Open **PowerShell**, `cd` into the unzipped folder, and run:
 
@@ -46,7 +55,7 @@ Check that it works:
 plaintext version
 ```
 
-You want **2.4.0 or newer**. Older binaries will choke on current examples (`import ai`,
+You want **2.8.0 or newer**. Older binaries will choke on current examples (`import ai`,
 `increase … by`, `plaintext build`, and so on). If something weird happens, see
 [docs/troubleshooting.md](docs/troubleshooting.md).
 
@@ -68,6 +77,18 @@ cargo install --path .
 
 **macOS:** install Xcode Command Line Tools (`xcode-select --install`). That is usually enough.
 
+**Linux (Debian/Ubuntu):** install build tools and Raylib’s system libraries, then build:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake pkg-config libclang-dev clang \
+  libasound2-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev \
+  libgl1-mesa-dev libglu1-mesa-dev libwayland-dev libxkbcommon-dev
+cargo install --path .
+```
+
+Other distros need the same packages under their own names (clang/libclang, X11, OpenGL, ALSA).
+
 ## 2. Your first program
 
 ```bash
@@ -85,24 +106,33 @@ plaintext repl
 
 ## 3. Editor support (VS Code)
 
-The Windows release zip includes `plaintext-lang.vsix`. On any OS you can also build it from
-`editors/vscode/` (see that folder's README), or copy the `.vsix` from a Windows zip — it works
-on Mac VS Code too.
+You need **two things**: the `plaintext` program (Step 2 above / on your PATH) and
+the VS Code extension.
+
+**Install the extension from a release zip** (includes `plaintext-lang.vsix`):
 
 ```bash
-code --install-extension plaintext-lang.vsix
+code --install-extension path/to/plaintext-lang.vsix
 ```
 
-Then reload the window. `.pt` files get syntax highlighting and the PlainText icon.
+Then reload VS Code. Open a `.pt` file — you should get colors **and** red squiggles
+when something is wrong (same messages as `plaintext check`).
+
+If you only see colors, `plaintext` is not on your PATH. Either fix PATH or set
+the VS Code setting **`plaintext.path`** to the full path of `plaintext.exe`
+(Windows) / `plaintext` (Mac).
+
+Full walkthrough: [editors/vscode/README.md](editors/vscode/README.md).
+You can also build the `.vsix` from that folder if you are developing from a clone.
 
 ## 4. Learn the language
 
 - **[docs/README.md](docs/README.md)** — start here (lesson map, ~60–90 minutes)
-- **[docs/learn/](docs/learn/)** — teacher-style lessons (01 → 12) with exercises
+- **[docs/learn/](docs/learn/)** — teacher-style lessons (01 → 14) with exercises
 - **[docs/cheatsheet.md](docs/cheatsheet.md)** — one-page syntax reminder
 - **[docs/language-reference.md](docs/language-reference.md)** — full lookup guide
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** — common errors and fixes
-- **[examples/](examples/)** — small runnable programs
+- **[examples/](examples/)** — runnable programs ([index](examples/README.md))
 
 Useful commands:
 
@@ -110,6 +140,7 @@ Useful commands:
 |---------|----------------|
 | `plaintext run file.pt` | Type-check and run |
 | `plaintext check file.pt` | Type-check only |
+| `plaintext lsp` | Language server for editors (stdio) |
 | `plaintext repl` | Interactive prompt |
 | `plaintext new name` | Scaffold a project folder |
 | `plaintext version` | Print the version |

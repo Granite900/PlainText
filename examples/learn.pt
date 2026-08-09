@@ -1,17 +1,20 @@
-// Teaching a tiny neural network the XOR pattern (true when exactly one input is 1).
+// Train a tiny network on XOR, optionally on a GPU, then save and reload it.
 // Run with:  plaintext run examples/learn.pt
+//
+// For training from a CSV file, see dataset.pt.
+// For learning without labelled answers (neuroevolution), see evolve.pt.
 
 import ai
-import math   // for round(), to tidy up the printed numbers
+import math   // for round()
 
-// 2 inputs → one hidden layer of 8 neurons → 1 output.
-brain = neural_network(inputs: 2, hidden: [8], outputs: 1)
+// device: auto uses any GPU the machine has, and falls back to the CPU with a note.
+// Other choices: cpu, cuda, rocm, mps, vulkan, dx12.
+brain = neural_network(inputs: 2, hidden: [8], outputs: 1, device: auto)
 
 examples = [[0, 0], [0, 1], [1, 0], [1, 1]]
-answers  = [[0],    [1],    [1],    [0]]
+answers  = [[0],    [1],    [1],    [0]]        // XOR: true when exactly one input is 1
 
-// Train with the Adam optimizer. Other choices: sgd, momentum, rmsprop.
-// You can also pass rate: and decay: to tune the learning.
+// Train with Adam. Other optimizers: sgd, momentum, rmsprop.
 final_error = brain.train(examples, answers, epochs: 3000, optimizer: adam, rate: 0.05)
 print("final error: {final_error}")
 
@@ -19,6 +22,7 @@ for every pair in examples {
     print("{pair} -> {round(brain.predict(pair)[0], 3)}")
 }
 
-// Save the trained brain to reuse later:
-//   brain.save("xor.ai")
-//   brain = load_network("xor.ai")
+// Save and load so you can reuse a trained brain without training again.
+brain.save("brain.ai")
+loaded = load_network("brain.ai")
+print("after loading: [1, 0] -> {round(loaded.predict([1, 0])[0], 4)}")

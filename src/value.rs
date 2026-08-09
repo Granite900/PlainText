@@ -56,6 +56,8 @@ pub struct ClassInstance {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Builtin {
     Print,
+    Input,
+    Exit,
     ToText,
     ToNumber,
     Min,
@@ -117,6 +119,8 @@ impl Builtin {
     pub fn name(self) -> &'static str {
         match self {
             Builtin::Print => "print",
+            Builtin::Input => "input",
+            Builtin::Exit => "exit",
             Builtin::ToText => "to_text",
             Builtin::ToNumber => "to_number",
             Builtin::Min => "min",
@@ -168,9 +172,22 @@ impl Builtin {
         }
     }
 
+    /// Whether this builtin belongs to the `math` module (only available after
+    /// `import math`).
+    pub fn is_math(self) -> bool {
+        use Builtin::*;
+        matches!(
+            self,
+            Min | Greatest | Abs | Sqrt | Floor | Ceil | Round | Pow | Clamp | Sin | Cos | Tan
+                | RandomBetween
+        )
+    }
+
     pub fn from_name(name: &str) -> Option<Builtin> {
         Some(match name {
             "print" => Builtin::Print,
+            "input" => Builtin::Input,
+            "exit" => Builtin::Exit,
             "to_text" => Builtin::ToText,
             "to_number" => Builtin::ToNumber,
             "min" => Builtin::Min,
@@ -378,6 +395,12 @@ impl PtMap {
             None
         }
     }
+
+    /// Drop all entries. Used by the garbage collector to break a reference
+    /// cycle this dictionary is part of.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
 }
 
 /// A lexical scope. Only function calls (and the top-level module) create one;
@@ -439,4 +462,13 @@ fn assign_existing(env: &Env, name: &str, value: &Value) -> bool {
 /// which always live in the current scope).
 pub fn env_declare(env: &Env, name: &str, value: Value) {
     env.borrow_mut().vars.insert(name.to_string(), value);
+}
+
+/// A snapshot of a scope for the garbage collector to trace: the values it
+/// holds and its parent scope. (The GC marks through scopes but never clears
+/// them, so it only needs to read.)
+pub fn scope_snapshot(env: &Env) -> (Vec<Value>, Option<Env>) {
+    let scope = env.borrow();
+    let values = scope.vars.values().cloned().collect();
+    (values, scope.parent.clone())
 }

@@ -1,11 +1,14 @@
 // Core language tour: functions, classes, loops, dictionaries, and optionals.
 // Run with:  plaintext run examples/basics.pt
 
+import math   // needed for greatest(), sqrt(), pi, …
+
 // Parameter types are written after `:`. The return type is inferred.
+// Comparisons can be words (`is at least`) or symbols (`>=`) — same meaning.
 make function called classify_score(score: Number) {
-    if score >= 90 {
+    if score is at least 90 {
         return "A"
-    } else if score >= 80 {
+    } else if score is at least 80 {
         return "B"
     } else {
         return "C"
@@ -19,8 +22,8 @@ class Player {
 
     // Inside a method, `self` is the instance you called it on.
     make function called take_damage(amount: Number) {
-        self.health = self.health - amount
-        if self.health <= 0 {
+        decrease self.health by amount        // same as self.health = self.health - amount
+        if self.health is at most 0 {
             print("{self.name} has been defeated")
         }
     }
@@ -34,7 +37,7 @@ print("{hero.name} has {hero.health} health")   // {…} inserts values into tex
 scores = [95, 82, 74, 88]
 total = 0
 for every score in scores {
-    total = total + score
+    increase total by score
     print("{score} -> {classify_score(score)}")
 }
 print("Average: {total / scores.length()}")
@@ -45,9 +48,9 @@ repeat 3 times {
 }
 
 count = 3
-while count > 0 {
+while count is more than 0 {
     print("countdown {count}")
-    count = count - 1
+    decrease count by 1
 }
 
 // Dictionaries store key → value. Text also has methods like `.upper()`.

@@ -88,12 +88,16 @@
     "keywords": {
       "patterns": [
         {
+          "name": "keyword.operator.word.pt",
+          "match": "\\b(is\\s+at\\s+least|is\\s+at\\s+most|is\\s+more\\s+than|is\\s+less\\s+than|is\\s+not)\\b"
+        },
+        {
           "name": "keyword.control.pt",
           "match": "\\b(if|else|while|for|in|repeat|times|loop|return|break|continue|on)\\b"
         },
         {
           "name": "keyword.control.flow.pt",
-          "match": "\\b(wait|start)\\b"
+          "match": "\\b(wait|start|increase|decrease)\\b"
         },
         {
           "name": "storage.type.pt",
@@ -101,7 +105,7 @@
         },
         {
           "name": "keyword.operator.word.pt",
-          "match": "\\b(and|or|not|is)\\b"
+          "match": "\\b(and|or|not|is|by)\\b"
         },
         {
           "name": "keyword.other.pt",
@@ -109,7 +113,7 @@
         },
         {
           "name": "support.function.builtin.pt",
-          "match": "\\b(print|to_text|to_number|length|min|greatest|abs|sqrt|floor|ceil|round|random_between|pow|clamp|sin|cos|tan|read_file|write_file|append_file|file_exists|now|clock|after|clear_screen|draw_circle|draw_rectangle|draw_line|draw_text|rgb|rgba|screen_width|screen_height|key_down|key_pressed|mouse_x|mouse_y|mouse_down|mouse_pressed|load_sprite|draw_sprite|draw_sprite_scaled|draw_sprite_rotated|sprite_width|sprite_height|load_sound|play_sound|load_font)\\b"
+          "match": "\\b(print|input|exit|to_text|to_number|length|min|greatest|abs|sqrt|floor|ceil|round|random_between|pow|clamp|sin|cos|tan|read_file|write_file|append_file|file_exists|now|clock|after|clear_screen|draw_circle|draw_rectangle|draw_line|draw_text|rgb|rgba|screen_width|screen_height|key_down|key_pressed|mouse_x|mouse_y|mouse_down|mouse_pressed|load_sprite|draw_sprite|draw_sprite_scaled|draw_sprite_rotated|sprite_width|sprite_height|load_sound|play_sound|load_font)\\b"
         }
       ]
     },

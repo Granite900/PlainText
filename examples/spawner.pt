@@ -1,6 +1,8 @@
 // Timers inside a game: spawn a falling circle every half second.
 // Run with:  plaintext run examples/spawner.pt
 
+import math   // for random_between()
+
 class Drop {
     x: Number
     y: Number

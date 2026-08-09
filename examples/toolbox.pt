@@ -1,0 +1,18 @@
+// A small helper file, meant to be pulled into another program with
+//   import "./toolbox.pt"
+// Everything at the top level here — functions and variables — becomes
+// available to the file that imports it.
+
+make function called double(n) {
+    return n * 2
+}
+
+make function called is_even(n) {
+    return n % 2 == 0
+}
+
+make function called add(a, b) {
+    return a + b
+}
+
+greeting = "Hello from the toolbox"

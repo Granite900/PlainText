@@ -111,6 +111,7 @@ impl Parser {
             TokenKind::For => self.parse_for(),
             TokenKind::Repeat => self.parse_repeat(),
             TokenKind::Loop => self.parse_loop(),
+            TokenKind::Import => self.parse_import(),
             TokenKind::Game => self.parse_game(),
             TokenKind::Window => self.parse_window(),
             TokenKind::Return => self.parse_return(),
@@ -130,7 +131,55 @@ impl Parser {
                 let expr = self.parse_expr()?;
                 Ok(Stmt::Expr(Expr::Wait { expr: Box::new(expr), span }))
             }
+            _ if self.is_change_start() => self.parse_change(),
             _ => self.parse_assign_or_expr(),
+        }
+    }
+
+    /// `increase`/`decrease` are contextual words, not reserved: this only reads
+    /// them as the change statement when a target name follows (so `increase = 5`
+    /// or `increase(x)` still treat `increase` as an ordinary identifier).
+    fn is_change_start(&self) -> bool {
+        let lead = matches!(self.peek(), TokenKind::Ident(w) if w == "increase" || w == "decrease");
+        lead && matches!(
+            self.tokens.get(self.pos + 1).map(|t| &t.kind),
+            Some(TokenKind::Ident(_)) | Some(TokenKind::SelfKw)
+        )
+    }
+
+    /// `increase <place> by <amount>` / `decrease <place> by <amount>` — sugar
+    /// for `<place> = <place> + <amount>` (or `-`).
+    fn parse_change(&mut self) -> Result<Stmt, Diagnostic> {
+        let tok = self.advance();
+        let span = tok.span;
+        let decrease = matches!(&tok.kind, TokenKind::Ident(w) if w == "decrease");
+        let verb = if decrease { "decrease" } else { "increase" };
+
+        let target = self.parse_postfix()?;
+        if !self.eat_word("by") {
+            return Err(Diagnostic::new(
+                self.peek_span(),
+                format!("expected `by` (write `{} {} by <amount>`)", verb, "<name>"),
+            ));
+        }
+        let amount = self.parse_expr()?;
+        let op = if decrease { BinaryOp::Sub } else { BinaryOp::Add };
+        let value = Expr::Binary {
+            op,
+            left: Box::new(target.clone()),
+            right: Box::new(amount),
+            span,
+        };
+        Ok(Stmt::Assign { target, ty: None, value, span })
+    }
+
+    /// Consume the next token if it's the identifier `w`.
+    fn eat_word(&mut self, w: &str) -> bool {
+        if self.word_at(0, w) {
+            self.advance();
+            true
+        } else {
+            false
         }
     }
 
@@ -432,6 +481,17 @@ impl Parser {
         }
     }
 
+    fn parse_import(&mut self) -> Result<Stmt, Diagnostic> {
+        let span = self.expect(TokenKind::Import, "`import`")?.span;
+        // A quoted path imports another file; a bare name imports a module.
+        if matches!(self.peek(), TokenKind::Text(_)) {
+            let path = self.parse_string_literal("a file path in quotes")?;
+            return Ok(Stmt::ImportFile { path, span });
+        }
+        let module = self.parse_ident("a module name like `math`, or a \"path\" in quotes")?;
+        Ok(Stmt::Import { module, span })
+    }
+
     fn parse_return(&mut self) -> Result<Stmt, Diagnostic> {
         let span = self.expect(TokenKind::Return, "`return`")?.span;
         // A bare `return` with nothing after it (end of line / block).
@@ -549,11 +609,28 @@ impl Parser {
                 TokenKind::EqEq => BinaryOp::Eq,
                 TokenKind::NotEq => BinaryOp::NotEq,
                 TokenKind::Is => {
-                    // `is nothing` / `is not nothing`
+                    // The word forms of comparison, all built on `is`:
+                    //   is / is not              →  ==  /  !=
+                    //   is [not] nothing         →  the nothing check
+                    //   is at least / at most    →  >=  /  <=
+                    //   is more/greater than     →  >
+                    //   is less/fewer than       →  <
                     let span = self.advance().span;
                     let negated = self.eat(&TokenKind::Not);
-                    self.expect(TokenKind::Nothing, "`nothing` (write `is nothing` / `is not nothing`)")?;
-                    left = Expr::IsNothing { expr: Box::new(left), negated, span };
+                    if self.check(&TokenKind::Nothing) {
+                        self.advance();
+                        left = Expr::IsNothing { expr: Box::new(left), negated, span };
+                        continue;
+                    }
+                    let op = if negated {
+                        BinaryOp::NotEq
+                    } else {
+                        // A word comparison (`at least`, `more than`, …) or, if
+                        // none of those follow, plain equality.
+                        self.word_comparison().unwrap_or(BinaryOp::Eq)
+                    };
+                    let right = self.parse_comparison()?;
+                    left = Expr::Binary { op, left: Box::new(left), right: Box::new(right), span };
                     continue;
                 }
                 _ => break,
@@ -563,6 +640,43 @@ impl Parser {
             left = Expr::Binary { op, left: Box::new(left), right: Box::new(right), span };
         }
         Ok(left)
+    }
+
+    /// After `is`, try to read a word comparison operator, consuming its words.
+    /// Returns `None` (consuming nothing) if what follows is a plain value, so
+    /// `x is 5` still means equality. Only fires on the exact two-word phrases,
+    /// so a variable named `more`/`at`/… keeps working unless `than`/`least`/
+    /// `most` follows it.
+    fn word_comparison(&mut self) -> Option<BinaryOp> {
+        if self.word_at(0, "at") {
+            if self.word_at(1, "least") {
+                self.advance();
+                self.advance();
+                return Some(BinaryOp::GtEq);
+            }
+            if self.word_at(1, "most") {
+                self.advance();
+                self.advance();
+                return Some(BinaryOp::LtEq);
+            }
+            return None;
+        }
+        let more = self.word_at(0, "more") || self.word_at(0, "greater");
+        let less = self.word_at(0, "less") || self.word_at(0, "fewer");
+        if (more || less) && self.word_at(1, "than") {
+            self.advance();
+            self.advance();
+            return Some(if more { BinaryOp::Gt } else { BinaryOp::Lt });
+        }
+        None
+    }
+
+    /// Whether the token `offset` ahead is the identifier `w`.
+    fn word_at(&self, offset: usize, w: &str) -> bool {
+        match self.tokens.get(self.pos + offset) {
+            Some(tok) => matches!(&tok.kind, TokenKind::Ident(name) if name == w),
+            None => false,
+        }
     }
 
     fn parse_comparison(&mut self) -> Result<Expr, Diagnostic> {
@@ -924,7 +1038,7 @@ fn keyword_word(kind: &TokenKind) -> Option<&'static str> {
 /// `{...}` pieces of an interpolated string. The whole fragment must be one
 /// expression.
 fn parse_expr_from_str(src: &str, str_span: Span) -> Result<Expr, Diagnostic> {
-    let tokens = Lexer::new(src).tokenize().map_err(|mut d| {
+    let tokens = Lexer::with_file(src, str_span.file).tokenize().map_err(|mut d| {
         // Point interpolation errors at the string they came from.
         d.span = str_span;
         d

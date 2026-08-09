@@ -1,5 +1,7 @@
 // A walk through the standard library. Run with:  plaintext run examples/stdlib.pt
 
+import math   // pow, clamp, sqrt, round, pi live in the math module
+
 // Math — `pi` and `e` are built-in constants.
 print("pi is about {round(pi * 100) / 100}")
 print("2 to the 10th is {pow(2, 10)}")

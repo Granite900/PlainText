@@ -11,7 +11,7 @@ class Item {
 make function called total_cost(items) {
     total = 0
     for every item in items {
-        total = total + item.price * item.quantity
+        increase total by item.price * item.quantity
     }
     return total
 }
@@ -23,7 +23,7 @@ cart = [
 
 cost = total_cost(cart)
 
-if cost > 10 {
+if cost is more than 10 {
     print("Total is {cost} — free shipping!")
 } else {
     print("Total is {cost}")

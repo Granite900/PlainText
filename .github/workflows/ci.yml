@@ -1,0 +1,55 @@
+name: CI
+
+# Verify Windows + macOS release builds on every push / PR to main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-14
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Windows LLVM (bindgen)
+        if: runner.os == 'Windows'
+        run: choco install llvm -y
+
+      - name: Build release
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
+          fi
+          cargo build --release
+
+      - name: Check examples
+        shell: bash
+        run: |
+          BIN=./target/release/plaintext
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BIN=./target/release/plaintext.exe
+          fi
+          for f in examples/*.pt; do
+            echo "check $f"
+            "$BIN" check "$f"
+          done
+          "$BIN" run examples/basics.pt
+          "$BIN" run examples/cart.pt
+          "$BIN" run examples/stdlib.pt
+          "$BIN" run examples/list_tools.pt

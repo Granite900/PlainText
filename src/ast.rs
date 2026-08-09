@@ -152,6 +152,12 @@ pub enum Stmt {
     },
     Break(Span),
     Continue(Span),
+    /// `import <module>` — brings a standard-library module's names into scope.
+    Import { module: String, span: Span },
+    /// `import "./other.pt"` — merges another file's top-level definitions.
+    /// Resolved and spliced away before the checker/interpreter run, so those
+    /// stages never see it.
+    ImportFile { path: String, span: Span },
     Game(GameDecl),
     Window(WindowDecl),
     /// A bare expression evaluated for its side effects (e.g. a function call).

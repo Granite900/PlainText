@@ -10,11 +10,19 @@
 pub struct Span {
     pub line: usize,
     pub col: usize,
+    /// Which source file this came from, as an index into the file table the
+    /// CLI builds while loading imports. 0 is the entry file (and the default
+    /// for spans the interpreter makes itself).
+    pub file: u16,
 }
 
 impl Span {
     pub fn new(line: usize, col: usize) -> Span {
-        Span { line, col }
+        Span { line, col, file: 0 }
+    }
+
+    pub fn at(line: usize, col: usize, file: u16) -> Span {
+        Span { line, col, file }
     }
 }
 

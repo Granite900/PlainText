@@ -10,6 +10,7 @@ mod ast;
 mod checker;
 mod diagnostics;
 mod game;
+mod gc;
 mod gfx;
 mod interpreter;
 mod lexer;
@@ -18,22 +19,23 @@ mod token;
 mod ui;
 mod value;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use checker::Checker;
+use diagnostics::Diagnostic;
 use interpreter::Interpreter;
 use lexer::Lexer;
 use parser::Parser;
 
 /// Type-check a program, printing every diagnostic. Returns true if it's clean.
-fn type_check(path: &str, program: &ast::Program) -> bool {
+fn type_check(files: &[String], program: &ast::Program) -> bool {
     let errors = Checker::new().check(program);
     if errors.is_empty() {
         return true;
     }
     for d in &errors {
-        eprintln!("{}\n", d.render(path));
+        eprintln!("{}\n", d.render_multi(files));
     }
     let n = errors.len();
     eprintln!("{} error{} found.", n, if n == 1 { "" } else { "s" });
@@ -47,6 +49,7 @@ fn main() -> ExitCode {
     match command {
         Some("run") => cmd_run(args.get(1)),
         Some("check") => cmd_check(args.get(1)),
+        Some("repl") => cmd_repl(),
         Some("new") => cmd_new(args.get(1)),
         Some("version") | Some("--version") | Some("-v") => {
             println!("plaintext {}", env!("CARGO_PKG_VERSION"));
@@ -70,37 +73,106 @@ fn print_usage() {
          Usage:\n  \
          plaintext run <file.pt>     Run a program\n  \
          plaintext check <file.pt>   Check a program for errors without running it\n  \
+         plaintext repl              Start an interactive session\n  \
          plaintext new <name>        Create a new project folder\n  \
          plaintext version           Print the version"
     );
 }
 
-/// Load a source file, or print a friendly error and exit.
-fn read_source(path: &str) -> Result<String, ExitCode> {
-    match std::fs::read_to_string(path) {
-        Ok(src) => Ok(src),
-        Err(e) => {
-            eprintln!("Could not read `{}`: {}", path, e);
-            Err(ExitCode::FAILURE)
-        }
-    }
+/// Lex + parse one file (stamping its spans with `file_id`), returning either
+/// its program or an already-rendered error string pointing at the right file.
+fn parse_file(path: &str, src: &str, file_id: u16) -> Result<ast::Program, String> {
+    let tokens = Lexer::with_file(src, file_id).tokenize().map_err(|d| d.render(path))?;
+    Parser::new(tokens).parse_program().map_err(|d| d.render(path))
 }
 
-/// Lex + parse a source string into a program, printing diagnostics on failure.
-fn parse_source(path: &str, src: &str) -> Option<ast::Program> {
-    let tokens = match Lexer::new(src).tokenize() {
-        Ok(t) => t,
-        Err(d) => {
-            eprintln!("{}", d.render(path));
-            return None;
-        }
+/// Everything loaded from an entry file: the merged program (dependencies
+/// first) and the table mapping each span's file id to a display name.
+struct Loaded {
+    program: ast::Program,
+    files: Vec<String>,
+}
+
+/// Load an entry file and every file it imports, splicing them into one program.
+/// Returns an already-rendered error on failure.
+fn load_program(entry: &str) -> Result<Loaded, String> {
+    let mut ctx = LoadCtx {
+        out: Vec::new(),
+        files: Vec::new(),
+        loaded: Vec::new(),
+        in_progress: Vec::new(),
     };
-    match Parser::new(tokens).parse_program() {
-        Ok(p) => Some(p),
-        Err(d) => {
-            eprintln!("{}", d.render(path));
-            None
+    load_file(Path::new(entry), true, &mut ctx)?;
+    Ok(Loaded { program: ast::Program { statements: ctx.out }, files: ctx.files })
+}
+
+struct LoadCtx {
+    out: Vec<ast::Stmt>,
+    /// File id → display name; a file's id is its index here.
+    files: Vec<String>,
+    loaded: Vec<PathBuf>,
+    in_progress: Vec<PathBuf>,
+}
+
+fn load_file(path: &Path, is_entry: bool, ctx: &mut LoadCtx) -> Result<(), String> {
+    let shown = clean_path(&path.display().to_string());
+    let canonical = std::fs::canonicalize(path)
+        .map_err(|_| format!("Could not find file `{}`.", shown))?;
+    // Already merged, or currently being merged (an import cycle) — either way
+    // its definitions are or will be present, so don't include it twice.
+    if ctx.loaded.contains(&canonical) || ctx.in_progress.contains(&canonical) {
+        return Ok(());
+    }
+    let src = std::fs::read_to_string(&canonical)
+        .map_err(|e| format!("Could not read `{}`: {}", shown, e))?;
+
+    // Assign this file its id (its index in the table) before lexing, so every
+    // span it produces carries that id.
+    let file_id = ctx.files.len() as u16;
+    ctx.files.push(shown.clone());
+    let program = parse_file(&shown, &src, file_id)?;
+
+    ctx.in_progress.push(canonical.clone());
+    let parent = canonical.parent().map(Path::to_path_buf).unwrap_or_default();
+    let mut own = Vec::new();
+    for stmt in program.statements {
+        match stmt {
+            ast::Stmt::ImportFile { path: rel, .. } => {
+                load_file(&parent.join(&rel), false, ctx)?;
+            }
+            ast::Stmt::Game(_) | ast::Stmt::Window(_) if !is_entry => {
+                ctx.in_progress.pop();
+                return Err(format!(
+                    "Cannot import `{}`: an imported file can't contain a `game` or `window` block.",
+                    shown
+                ));
+            }
+            other => own.push(other),
         }
+    }
+    ctx.out.extend(own);
+    ctx.in_progress.pop();
+    ctx.loaded.push(canonical);
+    Ok(())
+}
+
+/// Drop Windows' `\\?\` extended-length prefix so displayed paths read cleanly.
+fn clean_path(p: &str) -> String {
+    p.strip_prefix(r"\\?\").unwrap_or(p).to_string()
+}
+
+/// Turn a run result into an exit code: a real error prints and fails; an
+/// `exit(code)` request becomes that status code.
+fn finish(files: &[String], result: Result<(), Diagnostic>) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(d) => match d.exit {
+            Some(code) => ExitCode::from(code as u8),
+            None => {
+                eprintln!("{}", d.render_multi(files));
+                ExitCode::FAILURE
+            }
+        },
     }
 }
 
@@ -112,15 +184,14 @@ fn cmd_run(path: Option<&String>) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let src = match read_source(&path) {
-        Ok(s) => s,
-        Err(code) => return code,
+    let Loaded { program, files } = match load_program(&path) {
+        Ok(l) => l,
+        Err(msg) => {
+            eprintln!("{}", msg);
+            return ExitCode::FAILURE;
+        }
     };
-    let program = match parse_source(&path, &src) {
-        Some(p) => p,
-        None => return ExitCode::FAILURE,
-    };
-    if !type_check(&path, &program) {
+    if !type_check(&files, &program) {
         return ExitCode::FAILURE;
     }
 
@@ -133,24 +204,12 @@ fn cmd_run(path: Option<&String>) -> ExitCode {
             _ => None,
         };
         if let Some(r) = result {
-            return match r {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(d) => {
-                    eprintln!("{}", d.render(&path));
-                    ExitCode::FAILURE
-                }
-            };
+            return finish(&files, r);
         }
     }
 
     let mut interp = Interpreter::new();
-    match interp.run(&program) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(d) => {
-            eprintln!("{}", d.render(&path));
-            ExitCode::FAILURE
-        }
-    }
+    finish(&files, interp.run(&program))
 }
 
 fn cmd_check(path: Option<&String>) -> ExitCode {
@@ -161,20 +220,94 @@ fn cmd_check(path: Option<&String>) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let src = match read_source(&path) {
-        Ok(s) => s,
-        Err(code) => return code,
+    let Loaded { program, files } = match load_program(&path) {
+        Ok(l) => l,
+        Err(msg) => {
+            eprintln!("{}", msg);
+            return ExitCode::FAILURE;
+        }
     };
-    let program = match parse_source(&path, &src) {
-        Some(p) => p,
-        None => return ExitCode::FAILURE,
-    };
-    if type_check(&path, &program) {
+    if type_check(&files, &program) {
         println!("OK — `{}` has no errors.", path);
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
     }
+}
+
+/// An interactive read-eval-print loop. Type an expression to see its value;
+/// definitions and variables persist across lines. Multi-line blocks (functions,
+/// `if`, …) are read until their braces balance.
+fn cmd_repl() -> ExitCode {
+    use std::io::Write;
+    println!("PlainText REPL — type an expression, or `exit` to quit.");
+    let mut interp = Interpreter::new();
+    let stdin = std::io::stdin();
+    let mut buffer = String::new();
+    loop {
+        print!("{}", if buffer.is_empty() { "> " } else { "... " });
+        let _ = std::io::stdout().flush();
+
+        let mut line = String::new();
+        match stdin.read_line(&mut line) {
+            Ok(0) => {
+                println!();
+                break;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("input error: {}", e);
+                break;
+            }
+        }
+
+        if buffer.is_empty() {
+            let trimmed = line.trim();
+            if trimmed == "exit" || trimmed == "quit" {
+                break;
+            }
+            if trimmed.is_empty() {
+                continue;
+            }
+        }
+
+        buffer.push_str(&line);
+        if brace_depth(&buffer) > 0 {
+            continue; // an unfinished block — keep reading
+        }
+
+        let src = std::mem::take(&mut buffer);
+        let program = match parse_file("repl", &src, 0) {
+            Ok(p) => p,
+            Err(msg) => {
+                eprintln!("{}", msg);
+                continue;
+            }
+        };
+        match interp.eval_repl(&program) {
+            Ok(Some(v)) => println!("{}", v.display()),
+            Ok(None) => {}
+            Err(d) => match d.exit {
+                Some(code) => return ExitCode::from(code as u8),
+                None => eprintln!("{}", d.render("repl")),
+            },
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// Net `{` minus `}` in a source fragment, floored at zero — used to tell when a
+/// REPL block is still open.
+fn brace_depth(s: &str) -> i32 {
+    let mut depth: i32 = 0;
+    for c in s.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    depth.max(0)
 }
 
 fn cmd_new(name: Option<&String>) -> ExitCode {

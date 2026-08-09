@@ -1,0 +1,21 @@
+// Splitting a program across files, and working over whole lists.
+// Run with:  plaintext run examples/list_tools.pt
+
+import "./toolbox.pt"
+
+print(greeting)
+
+nums = [5, 3, 8, 1, 4, 2]
+
+// Each of these returns a NEW list (or value); `nums` is left alone.
+print("sorted:      {nums.sorted()}")
+print("doubled:     {nums.transformed_by(double)}")
+print("evens only:  {nums.kept_if(is_even)}")
+print("sum:         {nums.combined(0, add)}")
+
+words = ["pear", "apple", "fig", "cherry"]
+print("sorted words: {words.sorted()}")
+
+// exit() stops the program right here — the line below never runs.
+exit()
+print("unreachable")

@@ -5,12 +5,13 @@
 //! later milestone without changing this file's logic.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::ast::*;
 use crate::diagnostics::Diagnostic;
+use crate::gc::Heap;
 use crate::gfx::{Color, DrawCmd, GfxBridge};
 use crate::token::Span;
 use crate::ui::{Align, UiKind, UiNode};
@@ -34,6 +35,17 @@ pub struct Interpreter {
     gfx: Option<Rc<RefCell<GfxBridge>>>,
     /// Pending timers scheduled with `after`/`every`.
     timers: Vec<Timer>,
+    /// Standard-library modules brought in with `import` (e.g. `math`).
+    imports: HashSet<String>,
+    /// The cycle-collecting garbage collector's object registry.
+    heap: Heap,
+    /// The scope of each currently-executing function/hook call. These are GC
+    /// roots: collection can happen while they're on the stack.
+    frames: Vec<Env>,
+    /// Scopes that must stay rooted for a whole run (e.g. a game block's state).
+    persistent_roots: Vec<Env>,
+    /// Values held on the Rust side across a collection point (loop snapshots).
+    temp_roots: Vec<Value>,
 }
 
 /// A scheduled callback. `interval` is `Some` for `every` (repeats) and `None`
@@ -55,9 +67,6 @@ impl Interpreter {
             .unwrap_or(0x9E3779B9)
             | 1;
         let globals = Scope::new_global();
-        // Math constants available as ordinary global values.
-        env_declare(&globals, "pi", Value::Number(std::f64::consts::PI));
-        env_declare(&globals, "e", Value::Number(std::f64::consts::E));
         // Named colors as [r, g, b] lists.
         for (name, (r, g, b)) in crate::gfx::named_colors() {
             let list = vec![
@@ -78,6 +87,66 @@ impl Interpreter {
             start: Instant::now(),
             gfx: None,
             timers: Vec::new(),
+            imports: HashSet::new(),
+            heap: Heap::new(),
+            frames: Vec::new(),
+            persistent_roots: Vec::new(),
+            temp_roots: Vec::new(),
+        }
+    }
+
+    // ---- garbage collection ----------------------------------------------
+
+    /// Allocate a list on the collected heap.
+    fn new_list(&mut self, items: Vec<Value>) -> Value {
+        let rc = Rc::new(RefCell::new(items));
+        self.heap.track_list(&rc);
+        Value::List(rc)
+    }
+
+    /// Allocate a dictionary on the collected heap.
+    fn new_dict(&mut self, map: PtMap) -> Value {
+        let rc = Rc::new(RefCell::new(map));
+        self.heap.track_dict(&rc);
+        Value::Dictionary(rc)
+    }
+
+    /// Allocate a class instance on the collected heap.
+    fn new_instance(&mut self, inst: ClassInstance) -> Value {
+        let rc = Rc::new(RefCell::new(inst));
+        self.heap.track_instance(&rc);
+        Value::Class(rc)
+    }
+
+    /// Run one garbage collection: mark from all roots, sweep cyclic garbage.
+    fn collect(&mut self) {
+        let roots: Vec<Value> = self
+            .temp_roots
+            .iter()
+            .cloned()
+            .chain(self.timers.iter().map(|t| t.callback.clone()))
+            .collect();
+        let mut envs: Vec<Env> = Vec::with_capacity(1 + self.persistent_roots.len() + self.frames.len());
+        envs.push(self.globals.clone());
+        envs.extend(self.persistent_roots.iter().cloned());
+        envs.extend(self.frames.iter().cloned());
+        let swept = self.heap.collect(&roots, &envs);
+        if std::env::var("PT_GC_TRACE").is_ok() {
+            eprintln!("[gc] swept {} cyclic object(s)", swept);
+        }
+    }
+
+    /// Scan for `import` statements and enable their modules. `import math`
+    /// makes the math functions resolvable and declares `pi`/`e`.
+    fn process_imports(&mut self, statements: &[Stmt]) {
+        for stmt in statements {
+            if let Stmt::Import { module, .. } = stmt {
+                self.imports.insert(module.clone());
+            }
+        }
+        if self.imports.contains("math") {
+            env_declare(&self.globals, "pi", Value::Number(std::f64::consts::PI));
+            env_declare(&self.globals, "e", Value::Number(std::f64::consts::E));
         }
     }
 
@@ -119,6 +188,7 @@ impl Interpreter {
     /// Hoist declarations, run top-level statements and the game block's init
     /// statements, and return the scope holding the game's state.
     pub fn prepare_game(&mut self, program: &Program, game: &GameDecl) -> Result<Env, Diagnostic> {
+        self.process_imports(&program.statements);
         self.hoist(&program.statements)?;
         for stmt in &program.statements {
             if matches!(stmt, Stmt::Function(_) | Stmt::Class(_) | Stmt::Game(_)) {
@@ -127,6 +197,9 @@ impl Interpreter {
             self.exec_stmt(stmt, &self.globals.clone())?;
         }
         let scope = Scope::new_child(&self.globals);
+        // The game's state scope stays rooted for the whole run — hooks and
+        // timers can trigger collection at any time.
+        self.persistent_roots.push(scope.clone());
         for stmt in &game.init {
             self.exec_stmt(stmt, &scope)?;
         }
@@ -136,6 +209,7 @@ impl Interpreter {
     /// Hoist declarations and run top-level statements, returning the global
     /// scope. Used by the window runner (window state lives at top level).
     pub fn prepare(&mut self, program: &Program) -> Result<Env, Diagnostic> {
+        self.process_imports(&program.statements);
         self.hoist(&program.statements)?;
         for stmt in &program.statements {
             if matches!(
@@ -257,13 +331,17 @@ impl Interpreter {
         for (p, v) in hook.params.iter().zip(args) {
             env_declare(&child, p, v);
         }
-        self.exec_block(&hook.body, &child)?;
+        self.frames.push(child.clone());
+        let result = self.exec_block(&hook.body, &child);
+        self.frames.pop();
+        result?;
         Ok(())
     }
 
     /// Run a whole program: hoist declarations, execute top-level statements,
     /// then call `main` if one is defined.
     pub fn run(&mut self, program: &Program) -> Result<(), Diagnostic> {
+        self.process_imports(&program.statements);
         self.hoist(&program.statements)?;
 
         for stmt in &program.statements {
@@ -295,6 +373,31 @@ impl Interpreter {
             self.tick_timers(0.016)?;
         }
         Ok(())
+    }
+
+    /// Evaluate one REPL entry: hoist its declarations, run its statements
+    /// against the persistent global scope, and return the value of a trailing
+    /// bare expression (so `2 + 2` prints `4`). Declarations and assignments
+    /// stay available on later lines. No static checking — runtime checks only.
+    pub fn eval_repl(&mut self, program: &Program) -> Result<Option<Value>, Diagnostic> {
+        self.process_imports(&program.statements);
+        self.hoist(&program.statements)?;
+        let last = program.statements.len().wrapping_sub(1);
+        let mut result = None;
+        for (i, stmt) in program.statements.iter().enumerate() {
+            if matches!(stmt, Stmt::Function(_) | Stmt::Class(_)) {
+                continue;
+            }
+            if i == last {
+                if let Stmt::Expr(e) = stmt {
+                    let v = self.eval(e, &self.globals.clone())?;
+                    result = if matches!(v, Value::Nothing) { None } else { Some(v) };
+                    continue;
+                }
+            }
+            self.exec_stmt(stmt, &self.globals.clone())?;
+        }
+        Ok(result)
     }
 
     /// Register every top-level function and class so they can be referenced
@@ -335,6 +438,11 @@ impl Interpreter {
 
     fn exec_block(&mut self, stmts: &[Stmt], env: &Env) -> ExecResult {
         for stmt in stmts {
+            // Statement boundaries are safe points for collection: no partly-
+            // evaluated expression temporaries are live here.
+            if self.heap.should_collect() {
+                self.collect();
+            }
             match self.exec_stmt(stmt, env)? {
                 Flow::Normal => {}
                 other => return Ok(other),
@@ -387,15 +495,29 @@ impl Interpreter {
             Stmt::ForEvery { var, iterable, body, span } => {
                 let seq = self.eval(iterable, env)?;
                 let items = self.iterate(seq, *span)?;
+                // The snapshot lives on the Rust stack across the loop body, so
+                // root it — otherwise the GC couldn't see items whose only
+                // remaining reference is this snapshot.
+                let base = self.temp_roots.len();
+                self.temp_roots.extend(items.iter().cloned());
+                let mut outcome = Ok(Flow::Normal);
                 for item in items {
                     env_declare(env, var, item);
-                    match self.exec_block(body, env)? {
-                        Flow::Break => break,
-                        Flow::Continue | Flow::Normal => {}
-                        ret @ Flow::Return(_) => return Ok(ret),
+                    match self.exec_block(body, env) {
+                        Ok(Flow::Break) => break,
+                        Ok(Flow::Continue) | Ok(Flow::Normal) => {}
+                        Ok(ret @ Flow::Return(_)) => {
+                            outcome = Ok(ret);
+                            break;
+                        }
+                        Err(e) => {
+                            outcome = Err(e);
+                            break;
+                        }
                     }
                 }
-                Ok(Flow::Normal)
+                self.temp_roots.truncate(base);
+                outcome
             }
             Stmt::Repeat { count, body, span } => {
                 let n = self.eval_number(count, env)?;
@@ -431,6 +553,8 @@ impl Interpreter {
             }
             Stmt::Break(_) => Ok(Flow::Break),
             Stmt::Continue(_) => Ok(Flow::Continue),
+            Stmt::Import { .. } => Ok(Flow::Normal), // handled in process_imports
+            Stmt::ImportFile { .. } => Ok(Flow::Normal), // spliced away before running
             Stmt::Game(_) | Stmt::Window(_) => Ok(Flow::Normal), // handled by the runner, not here
             Stmt::Expr(e) => {
                 self.eval(e, env)?;
@@ -554,7 +678,7 @@ impl Interpreter {
                 for item in items {
                     values.push(self.eval(item, env)?);
                 }
-                Ok(Value::List(Rc::new(std::cell::RefCell::new(values))))
+                Ok(self.new_list(values))
             }
             Expr::DictionaryLit { entries, span } => {
                 let mut map = PtMap::new();
@@ -564,7 +688,7 @@ impl Interpreter {
                     let val = self.eval(v, env)?;
                     map.set(key, val);
                 }
-                Ok(Value::Dictionary(Rc::new(std::cell::RefCell::new(map))))
+                Ok(self.new_dict(map))
             }
             Expr::ClassLit { name, fields, span } => self.eval_class_literal(name, fields, env, *span),
             Expr::Field { object, name, span } => {
@@ -590,6 +714,11 @@ impl Interpreter {
             return Ok(v);
         }
         if let Some(b) = Builtin::from_name(name) {
+            // Math functions are only available after `import math`.
+            if b.is_math() && !self.imports.contains("math") {
+                return Err(Diagnostic::new(span, format!("`{}` needs the math module", name))
+                    .with_hint("add `import math` at the top of your file"));
+            }
             return Ok(Value::Builtin(b));
         }
         Err(Diagnostic::new(span, format!("unknown name `{}`", name))
@@ -750,10 +879,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Class(Rc::new(std::cell::RefCell::new(ClassInstance {
-            def,
-            fields: field_values,
-        }))))
+        Ok(self.new_instance(ClassInstance { def, fields: field_values }))
     }
 
     /// Read `object.name`: a class field, a bound method, or nothing valid.
@@ -860,39 +986,47 @@ impl Interpreter {
         self_val: Option<Value>,
         span: Span,
     ) -> EvalResult {
-        let decl = &func.decl;
         let scope = Scope::new_child(&func.closure);
         if let Some(sv) = self_val {
             env_declare(&scope, "self", sv);
         }
 
-        let required = decl.params.iter().filter(|p| p.default.is_none()).count();
-        if args.len() > decl.params.len() || args.len() < required {
+        let required = func.decl.params.iter().filter(|p| p.default.is_none()).count();
+        if args.len() > func.decl.params.len() || args.len() < required {
             return Err(Diagnostic::new(
                 span,
                 format!(
                     "`{}` takes {} argument(s), but got {}",
-                    decl.name,
-                    decl.params.len(),
+                    func.decl.name,
+                    func.decl.params.len(),
                     args.len()
                 ),
             ));
         }
 
+        // The call's scope is a GC root while its body runs (collection can
+        // happen at any statement boundary inside it).
+        self.frames.push(scope.clone());
+        let result = self.run_call_body(&func.decl, args, &scope);
+        self.frames.pop();
+        result
+    }
+
+    fn run_call_body(&mut self, decl: &FunctionDecl, args: Vec<Value>, scope: &Env) -> EvalResult {
         let mut args = args.into_iter();
         for param in &decl.params {
             let value = match args.next() {
                 Some(v) => v,
                 None => {
-                    // Must have a default (checked by arity above).
+                    // Must have a default (checked by arity in the caller).
                     let default = param.default.as_ref().unwrap();
-                    self.eval(default, &scope)?
+                    self.eval(default, scope)?
                 }
             };
-            env_declare(&scope, &param.name, value);
+            env_declare(scope, &param.name, value);
         }
 
-        match self.exec_block(&decl.body, &scope)? {
+        match self.exec_block(&decl.body, scope)? {
             Flow::Return(v) => Ok(v),
             Flow::Normal => Ok(Value::Nothing),
             Flow::Break | Flow::Continue => Err(Diagnostic::new(
@@ -1002,8 +1136,121 @@ impl Interpreter {
                 let parts: Vec<String> = list.borrow().iter().map(|v| v.display()).collect();
                 Ok(Value::text(parts.join(&sep)))
             }
+            "sorted" => {
+                self.expect_arity(name, &args, 0, span)?;
+                let mut items = list.borrow().clone();
+                let all_num = items.iter().all(|v| matches!(v, Value::Number(_)));
+                let all_text = items.iter().all(|v| matches!(v, Value::Text(_)));
+                if !all_num && !all_text {
+                    return Err(Diagnostic::new(span, "sorted() needs a list of all numbers or all text")
+                        .with_hint("sort a mixed or nested list yourself with a loop"));
+                }
+                use std::cmp::Ordering;
+                if all_num {
+                    items.sort_by(|a, b| match (a, b) {
+                        (Value::Number(x), Value::Number(y)) => x.partial_cmp(y).unwrap_or(Ordering::Equal),
+                        _ => Ordering::Equal,
+                    });
+                } else {
+                    items.sort_by(|a, b| match (a, b) {
+                        (Value::Text(x), Value::Text(y)) => x.cmp(y),
+                        _ => Ordering::Equal,
+                    });
+                }
+                Ok(self.new_list(items))
+            }
+            "transformed_by" => {
+                self.expect_arity(name, &args, 1, span)?;
+                let f = args.into_iter().next().unwrap();
+                self.require_callable(&f, "transformed_by", span)?;
+                let items: Vec<Value> = list.borrow().clone();
+                let base = self.temp_roots.len();
+                self.temp_roots.extend(items.iter().cloned());
+                let mut out = Vec::with_capacity(items.len());
+                let mut err = None;
+                for item in items {
+                    match self.call_value(f.clone(), vec![item], span) {
+                        Ok(r) => {
+                            self.temp_roots.push(r.clone());
+                            out.push(r);
+                        }
+                        Err(e) => {
+                            err = Some(e);
+                            break;
+                        }
+                    }
+                }
+                self.temp_roots.truncate(base);
+                if let Some(e) = err {
+                    return Err(e);
+                }
+                Ok(self.new_list(out))
+            }
+            "kept_if" => {
+                self.expect_arity(name, &args, 1, span)?;
+                let f = args.into_iter().next().unwrap();
+                self.require_callable(&f, "kept_if", span)?;
+                let items: Vec<Value> = list.borrow().clone();
+                let base = self.temp_roots.len();
+                self.temp_roots.extend(items.iter().cloned());
+                let mut out = Vec::new();
+                let mut err = None;
+                for item in items {
+                    match self.call_value(f.clone(), vec![item.clone()], span) {
+                        Ok(Value::Bool(true)) => out.push(item),
+                        Ok(Value::Bool(false)) => {}
+                        Ok(other) => {
+                            err = Some(Diagnostic::new(
+                                span,
+                                format!("kept_if's function must return true or false, but it returned a {}", other.type_name()),
+                            ));
+                            break;
+                        }
+                        Err(e) => {
+                            err = Some(e);
+                            break;
+                        }
+                    }
+                }
+                self.temp_roots.truncate(base);
+                if let Some(e) = err {
+                    return Err(e);
+                }
+                Ok(self.new_list(out))
+            }
+            "combined" => {
+                self.expect_arity(name, &args, 2, span)?;
+                let mut it = args.into_iter();
+                let start = it.next().unwrap();
+                let f = it.next().unwrap();
+                self.require_callable(&f, "combined", span)?;
+                let items: Vec<Value> = list.borrow().clone();
+                let base = self.temp_roots.len();
+                self.temp_roots.extend(items.iter().cloned());
+                let acc_slot = self.temp_roots.len();
+                self.temp_roots.push(start.clone());
+                let mut acc = start;
+                let mut err = None;
+                for item in items {
+                    match self.call_value(f.clone(), vec![acc.clone(), item], span) {
+                        Ok(r) => {
+                            acc = r;
+                            self.temp_roots[acc_slot] = acc.clone();
+                        }
+                        Err(e) => {
+                            err = Some(e);
+                            break;
+                        }
+                    }
+                }
+                self.temp_roots.truncate(base);
+                if let Some(e) = err {
+                    return Err(e);
+                }
+                Ok(acc)
+            }
             _ => Err(Diagnostic::new(span, format!("a list has no method `{}`", name)).with_hint(
-                "lists have length, is_empty, append, pop, get, contains, first, last, index_of, remove_at, reversed, join",
+                "lists have length, is_empty, append, pop, get, contains, first, last, index_of, remove_at, reversed, join, sorted, transformed_by, kept_if, combined",
             )),
         }
     }
@@ -1131,6 +1378,39 @@ impl Interpreter {
                 use std::io::Write;
                 let _ = std::io::stdout().flush();
                 Ok(Value::Nothing)
+            }
+            Builtin::Input => {
+                if args.len() > 1 {
+                    return Err(Diagnostic::new(span, "input() takes an optional prompt (0 or 1 argument)"));
+                }
+                if let Some(prompt) = args.first() {
+                    use std::io::Write;
+                    print!("{}", prompt.display());
+                    let _ = std::io::stdout().flush();
+                }
+                let mut line = String::new();
+                match std::io::stdin().read_line(&mut line) {
+                    Ok(0) => Ok(Value::text("")), // end of input
+                    Ok(_) => {
+                        while line.ends_with('\n') || line.ends_with('\r') {
+                            line.pop();
+                        }
+                        // Strip a byte-order mark some Windows pipes prepend.
+                        let line = line.strip_prefix('\u{feff}').unwrap_or(&line);
+                        Ok(Value::text(line))
+                    }
+                    Err(e) => Err(Diagnostic::new(span, format!("couldn't read input: {}", e))),
+                }
+            }
+            Builtin::Exit => {
+                if args.len() > 1 {
+                    return Err(Diagnostic::new(span, "exit() takes an optional status code (0 or 1 argument)"));
+                }
+                let code = match args.first() {
+                    Some(v) => self.as_number(v, span)?.clamp(0.0, 255.0) as i32,
+                    None => 0,
+                };
+                Err(Diagnostic::exit(code))
             }
             Builtin::ToText => {
                 self.expect_arity("to_text", &args, 1, span)?;
@@ -1555,6 +1835,18 @@ impl Interpreter {
         }
     }
 
+    fn require_callable(&self, v: &Value, method: &str, span: Span) -> Result<(), Diagnostic> {
+        if is_callable(v) {
+            Ok(())
+        } else {
+            Err(Diagnostic::new(
+                span,
+                format!("{} needs a function, got a {}", method, v.type_name()),
+            )
+            .with_hint("pass a function by name, e.g. numbers.transformed_by(double)"))
+        }
+    }
+
     fn expect_arity(&self, name: &str, args: &[Value], n: usize, span: Span) -> Result<(), Diagnostic> {
         if args.len() != n {
             Err(Diagnostic::new(
@@ -1616,6 +1908,8 @@ fn stmt_span(stmt: &Stmt) -> Span {
         Stmt::Function(f) => f.span,
         Stmt::Class(t) => t.span,
         Stmt::Break(s) | Stmt::Continue(s) => *s,
+        Stmt::Import { span, .. } => *span,
+        Stmt::ImportFile { span, .. } => *span,
         Stmt::Game(g) => g.span,
         Stmt::Window(w) => w.span,
         Stmt::Expr(e) => e.span(),

@@ -11,14 +11,18 @@ pub struct Lexer {
     pos: usize,
     line: usize,
     col: usize,
+    file: u16,
 }
 
 impl Lexer {
-    pub fn new(source: &str) -> Lexer {
+    /// Lex a source that belongs to file `file` in the CLI's file table, so
+    /// every span it produces knows which file it came from. Use file `0` for a
+    /// standalone source (the entry file, or the REPL).
+    pub fn with_file(source: &str, file: u16) -> Lexer {
         // Editors on Windows often save UTF-8 with a leading byte-order mark
         // (U+FEFF). Skip it so those files lex cleanly.
         let source = source.strip_prefix('\u{feff}').unwrap_or(source);
-        Lexer { chars: source.chars().collect(), pos: 0, line: 1, col: 1 }
+        Lexer { chars: source.chars().collect(), pos: 0, line: 1, col: 1, file }
     }
 
     /// Tokenize the whole input, or fail on the first lexical error.
@@ -57,7 +61,7 @@ impl Lexer {
     }
 
     fn here(&self) -> Span {
-        Span::new(self.line, self.col)
+        Span::at(self.line, self.col, self.file)
     }
 
     fn next_token(&mut self) -> Result<Token, Diagnostic> {

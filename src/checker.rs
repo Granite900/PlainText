@@ -85,6 +85,8 @@ pub struct Checker {
     scopes: Vec<HashMap<String, Ty>>,
     /// Flow-narrowed places (e.g. `x` or `c.nickname` proven non-nothing).
     narrowed: HashMap<String, Ty>,
+    /// Standard-library modules brought in with `import`.
+    imports: HashSet<String>,
     errors: Vec<Diagnostic>,
 }
 
@@ -100,15 +102,24 @@ impl Checker {
             checked: HashSet::new(),
             scopes: vec![HashMap::new()],
             narrowed: HashMap::new(),
+            imports: HashSet::new(),
             errors: Vec::new(),
         }
     }
 
     /// Check a program. Returns the collected diagnostics (empty = all good).
     pub fn check(mut self, program: &Program) -> Vec<Diagnostic> {
-        // Math constants and named colors, mirrored from the interpreter.
-        self.declare("pi", Ty::Number);
-        self.declare("e", Ty::Number);
+        // Collect imported modules first (order-independent, like the runtime).
+        for stmt in &program.statements {
+            if let Stmt::Import { module, .. } = stmt {
+                self.imports.insert(module.clone());
+            }
+        }
+        // Math constants come with `import math`; colors/align words are always on.
+        if self.imports.contains("math") {
+            self.declare("pi", Ty::Number);
+            self.declare("e", Ty::Number);
+        }
         for (name, _) in crate::gfx::named_colors() {
             self.declare(name, Ty::List(Box::new(Ty::Number)));
         }
@@ -403,6 +414,16 @@ impl Checker {
                 returns.push(t);
             }
             Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::Import { module, span } => {
+                if module != "math" {
+                    self.error(
+                        *span,
+                        format!("unknown module `{}`", module),
+                        Some("the only module right now is `math`".into()),
+                    );
+                }
+            }
+            Stmt::ImportFile { .. } => {} // resolved and spliced away before checking
             Stmt::Window(win) => {
                 for (_, v) in &win.props {
                     self.type_of(v);
@@ -650,7 +671,14 @@ impl Checker {
         if let Some(t) = self.lookup(name) {
             return t;
         }
-        if crate::value::Builtin::from_name(name).is_some() {
+        if let Some(b) = crate::value::Builtin::from_name(name) {
+            if b.is_math() && !self.imports.contains("math") {
+                self.error(
+                    span,
+                    format!("`{}` needs the math module", name),
+                    Some("add `import math` at the top of your file".into()),
+                );
+            }
             return Ty::Dynamic; // builtins are handled at their call sites
         }
         self.error(
@@ -762,6 +790,13 @@ impl Checker {
         // Named function call.
         if let Expr::Ident(fname, _) = callee {
             if let Some(b) = crate::value::Builtin::from_name(fname) {
+                if b.is_math() && !self.imports.contains("math") {
+                    self.error(
+                        span,
+                        format!("`{}` needs the math module", fname),
+                        Some("add `import math` at the top of your file".into()),
+                    );
+                }
                 let arg_tys: Vec<Ty> = args.iter().map(|a| self.type_of(a)).collect();
                 return self.builtin_return(b, &arg_tys, span);
             }
@@ -853,7 +888,9 @@ impl Checker {
             "is_empty" | "contains" => Ty::Bool,
             "append" | "add" => Ty::Nothing,
             "pop" | "get" | "first" | "last" | "remove_at" => (*elem).clone(),
-            "reversed" => Ty::List(Box::new((*elem).clone())),
+            "reversed" | "sorted" | "kept_if" => Ty::List(Box::new((*elem).clone())),
+            "transformed_by" => Ty::List(Box::new(Ty::Dynamic)),
+            "combined" => Ty::Dynamic,
             "join" => Ty::Text,
             _ => {
                 self.error(span, format!("a list has no method `{}`", name), None);
@@ -894,10 +931,10 @@ impl Checker {
         let _ = arg_tys;
         let _ = span;
         match b {
-            Print | WriteFile | AppendFile | ClearScreen | DrawCircle | DrawRectangle | DrawLine
+            Print | Exit | WriteFile | AppendFile | ClearScreen | DrawCircle | DrawRectangle | DrawLine
             | DrawText | DrawSprite | DrawSpriteScaled | DrawSpriteRotated | PlaySound | After
             | Every => Ty::Nothing,
-            ToText | ReadFile => Ty::Text,
+            ToText | ReadFile | Input => Ty::Text,
             FileExists | KeyDown | KeyPressed | MouseDown | MousePressed => Ty::Bool,
             Rgb | Rgba => Ty::List(Box::new(Ty::Number)),
             ToNumber | Length | Min | Greatest | Abs | Sqrt | Floor | Ceil | Round | RandomBetween

@@ -1,7 +1,19 @@
+<div align="center">
+
 # PlainText
 
-A readability-first programming language for desktop apps and 2D games. Code reads close to
-plain English. Files end in `.pt`.
+**The programming language that reads like plain English.**
+
+Build desktop apps and 2D games without the cryptic syntax. Statically typed, garbage
+collected, batteries included. Files end in `.pt`.
+
+[![Download](https://img.shields.io/github/v/release/Granite900/PlainText?color=2ea44f&label=download)](https://github.com/Granite900/PlainText/releases)
+&nbsp;![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS-blue)
+&nbsp;![Built with Rust](https://img.shields.io/badge/built%20with-Rust-orange)
+
+</div>
+
+---
 
 ```plaintext
 make function called greet(name: Text) {
@@ -11,58 +23,116 @@ make function called greet(name: Text) {
 greet("world")
 ```
 
-PlainText is statically typed with strong inference (you rarely write a type), garbage
-collected, and ships with a standard library plus native APIs for 2D games and desktop UIs —
-all backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
+PlainText favors real words over symbols (`and`/`or`/`not`, `is not nothing`), infers your
+types so you rarely write them, and includes native APIs for 2D games and desktop UIs — all
+backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 
-## Use PlainText (write programs)
+## Why you might like it
 
-**New here?** Start with [GETTING-STARTED.md](GETTING-STARTED.md).
+- **Reads like English.** `make function called`, `for every item in items`, `repeat 3 times`.
+- **Catches mistakes early.** A real type checker, but inference means you almost never write a type.
+- **Games & UIs built in.** `game { on update … on draw … }` and `window { column { button … } }`, drawn natively.
+- **Batteries included.** Math, lists (map/filter/fold-style tools), dictionaries, text, files, time, timers, and console input out of the box.
+- **No memory management.** Garbage collected — you never think about it.
 
-1. Download the latest **[Release](https://github.com/Granite900/PlainText/releases)**
-   for your OS (`plaintext-windows-x64.zip` or `plaintext-macos-arm64.zip`).
-2. Unzip and put `plaintext` / `plaintext.exe` on your PATH.
-3. Run an example:
+## Get started
+
+**New here?** Start with **[GETTING-STARTED.md](GETTING-STARTED.md)**.
+
+1. Download the latest **[release](https://github.com/Granite900/PlainText/releases)** for your OS
+   (`plaintext-windows-x64.zip` or `plaintext-macos-arm64.zip`).
+2. Unzip it and put `plaintext` / `plaintext.exe` on your PATH.
+3. Run something:
 
 ```
-plaintext run examples/basics.pt
-plaintext check examples/basics.pt
-plaintext new mygame
+plaintext run examples/basics.pt     # run a program
+plaintext check examples/basics.pt   # check for errors without running
+plaintext repl                       # try expressions interactively
+plaintext new mygame                 # scaffold a new project
 ```
 
-On Windows, install `plaintext-lang.vsix` from the zip for VS Code highlighting (the same
-`.vsix` works on Mac).
+Install `plaintext-lang.vsix` from the zip for VS Code syntax highlighting (same file on Windows
+and Mac).
 
-## Learn the language
+## A taste
 
-See [docs/language-reference.md](docs/language-reference.md) for the full guide: syntax, the
-type system, the standard library, and the game/UI APIs.
+<table>
+<tr><td>
+
+**A desktop UI**
+
+```plaintext
+counter = 0
+
+make function called add() {
+    increase counter by 1
+}
+
+window "Counter" (width: 420, height: 220) {
+    column (padding: 24, spacing: 16, align: center) {
+        text "Clicked {counter} times" (size: 26)
+        button "Click me" (on_click: add)
+    }
+}
+```
+
+</td><td>
+
+**A 2D game**
+
+```plaintext
+ball = 300
+
+game "Bounce" (width: 800, height: 600) {
+    on update(delta) {
+        ball = ball + 150 * delta
+    }
+    on draw() {
+        clear_screen(skyblue)
+        draw_circle(400, ball, 24, red)
+    }
+}
+```
+
+</td></tr>
+</table>
 
 ## Examples
 
 | File | What it shows |
 |------|---------------|
-| `examples/basics.pt`   | variables, functions, classes, loops, interpolation |
-| `examples/cart.pt`     | a small program with a `Dynamic` parameter |
-| `examples/stdlib.pt`   | math, list/text/dictionary methods, time |
-| `examples/timers.pt`   | `after` / `every` timers |
-| `examples/bounce.pt`   | a 2D game — a bouncing ball, arrow-key input |
-| `examples/sprites.pt`  | loading and drawing image sprites |
-| `examples/spawner.pt`  | timers driving a game (spawning enemies) |
-| `examples/counter.pt`  | a desktop UI — buttons and a live label |
+| [`examples/basics.pt`](examples/basics.pt)   | variables, functions, classes, loops, wordy compares |
+| [`examples/ask.pt`](examples/ask.pt)         | `input()` from the console |
+| [`examples/cart.pt`](examples/cart.pt)       | a small program with a flexible (`Dynamic`) parameter |
+| [`examples/stdlib.pt`](examples/stdlib.pt)   | `import math`, list / text / dictionary methods, time |
+| [`examples/list_tools.pt`](examples/list_tools.pt) | multi-file `import`, `sorted` / `transformed_by` / `kept_if` / `combined`, `exit` |
+| [`examples/toolbox.pt`](examples/toolbox.pt) | a module imported by `list_tools.pt` |
+| [`examples/timers.pt`](examples/timers.pt)   | `after` / `every` timers |
+| [`examples/bounce.pt`](examples/bounce.pt)   | a 2D game — a bouncing ball with arrow-key input |
+| [`examples/sprites.pt`](examples/sprites.pt) | loading and drawing image sprites |
+| [`examples/spawner.pt`](examples/spawner.pt) | timers driving a game (spawning objects) |
+| [`examples/catch.pt`](examples/catch.pt)     | a **complete** arcade game — score, lives, game over, restart |
+| [`examples/counter.pt`](examples/counter.pt) | a **complete** desktop UI — buttons and a live label |
+
+## Learn the language
+
+1. **[docs/README.md](docs/README.md)** — lesson map (start here)
+2. **[docs/learn/](docs/learn/)** — short teacher-style lessons (hello → games & UI)
+3. **[docs/language-reference.md](docs/language-reference.md)** — full reference when you need details
+
+Math helpers require `import math`. Prefer `increase` / `decrease` and word comparisons
+(`is at least`, …) when they make the code clearer.
 
 ## Editor support
 
-A VS Code syntax-highlighting extension lives in [editors/vscode/](editors/vscode/).
-It also shows the PlainText `{pt` icon on `.pt` files in the explorer.
-
-For the same icon in Windows File Explorer / on the desktop:
+A VS Code syntax-highlighting extension lives in [editors/vscode/](editors/vscode/), and shows the
+PlainText icon on `.pt` files. For that icon in Windows File Explorer / on the desktop:
 
 ```
 powershell -ExecutionPolicy Bypass -File scripts\install-pt-icon.ps1
 ```
 
-## Building from source (contributors)
+## Build from source
 
 Needs the [Rust toolchain](https://rustup.rs/).
 
@@ -71,22 +141,22 @@ Needs the [Rust toolchain](https://rustup.rs/).
 - **macOS:** Xcode Command Line Tools (`xcode-select --install`).
 
 ```
-cargo build
-cargo install --path .
+cargo build            # interpreter at target/debug/plaintext
+cargo install --path . # install `plaintext` onto your PATH
 ```
 
-The debug interpreter is at `target/debug/plaintext` (`.exe` on Windows). To build a
-Windows zip locally:
+Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
+(`v0.1.2`, …) are built for **Windows + macOS** by GitHub Actions
+([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
-```
-powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1
-```
+## How it works
 
-Tagged releases (`v0.1.1`, …) are built for **Windows + macOS** by GitHub Actions
-(`.github/workflows/release.yml`).
+PlainText is a tree-walking interpreter written in Rust: **lexer → parser → type checker →
+interpreter**, with a standard library and Raylib-backed game/UI APIs. Memory is reference
+counted with a mark-and-sweep collector on top to reclaim reference cycles, so you never manage
+memory yourself. See [docs/language-reference.md](docs/language-reference.md) for the language.
 
 ## Status
 
-v1 in progress. Working: the full core language, static type checker, standard library, 2D
-game API (shapes, sprites, input, timers), and a declarative UI system. Implemented as a
-tree-walking interpreter; a tracing garbage collector and a few polish items are still planned.
+The full language, type checker, standard library, 2D game API (shapes, sprites, input, timers),
+declarative UI system, and a cycle-collecting garbage collector all work today.

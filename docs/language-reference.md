@@ -30,6 +30,15 @@ age = 5
 age = age + 1        // now 6
 ```
 
+Adding to or subtracting from a variable is common enough to have a word form — `increase … by`
+and `decrease … by` — which reads like an instruction:
+
+```plaintext
+score = 0
+increase score by 10     // same as: score = score + 10
+decrease score by 3      // same as: score = score - 3
+```
+
 You don't write the type — PlainText infers it. `age` is a `Number`, `"hi"` is `Text`,
 `true` is a `Boolean`. You *may* write a type when you want to:
 
@@ -133,7 +142,31 @@ if age >= 18 and has_ticket {
 }
 ```
 
-Comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=`.
+Comparisons come in two spellings — symbols, or words that read like a sentence. They mean
+exactly the same thing; use whichever is clearer:
+
+| symbol | in words |
+|--------|----------|
+| `==`   | `is` |
+| `!=`   | `is not` |
+| `>=`   | `is at least` |
+| `<=`   | `is at most` |
+| `>`    | `is more than` (or `is greater than`) |
+| `<`    | `is less than` (or `is fewer than`) |
+
+```plaintext
+if score is at least 90 {
+    print("A")
+}
+if name is "Ada" {
+    print("hi Ada")
+}
+if lives is at most 0 {
+    print("game over")
+}
+```
+
+(The `is nothing` / `is not nothing` check for optionals is the same `is`, see [Optionals](#7-optionals-and-nothing).)
 
 ---
 
@@ -252,6 +285,7 @@ print(scores.contains(82))   // true
 ```
 
 List methods: `length`, `is_empty`, `append`/`add`, `pop`, `get`, `contains`, `first`, `last`,
+`index_of`, `remove_at`, `reversed`, `join`, `sorted`, `transformed_by`, `kept_if`, `combined`.
 `index_of`, `remove_at`, `reversed`, `join`.
 
 An empty list has no way to guess its element type, so annotate it:
@@ -259,6 +293,24 @@ An empty list has no way to guess its element type, so annotate it:
 ```plaintext
 names: Text list = []
 ```
+
+**Working over a whole list.** Four methods take a *function* and give back a new list (the
+original is untouched):
+
+```plaintext
+make function called double(n) { return n * 2 }
+make function called is_even(n) { return n % 2 == 0 }
+make function called add(a, b) { return a + b }
+
+nums = [5, 3, 8, 1]
+print(nums.sorted())                // [1, 3, 5, 8]
+print(nums.transformed_by(double))  // [10, 6, 16, 2]  — run a function over each item
+print(nums.kept_if(is_even))        // [8]             — keep the items it says true for
+print(nums.combined(0, add))        // 17              — fold everything into one value
+```
+
+`sorted` works on a list of all numbers or all text. `combined(start, f)` calls `f(running, item)`
+for each item, beginning from `start`.
 
 ### Dictionaries
 
@@ -446,8 +498,18 @@ window "Demo" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
 
 ## 12. The standard library at a glance
 
-**Math**: `min`, `greatest`, `abs`, `sqrt`, `floor`, `ceil`, `round`, `pow`, `clamp`, `sin`, `cos`,
-`tan`, `random_between(lo, hi)`, and the constants `pi` and `e`.
+**Math** — put `import math` at the top of your file to use these: `min`, `greatest`, `abs`,
+`sqrt`, `floor`, `ceil`, `round`, `pow`, `clamp`, `sin`, `cos`, `tan`, `random_between(lo, hi)`,
+and the constants `pi` and `e`.
+
+```plaintext
+import math
+
+print(sqrt(144))          // 12
+area = pi * radius * radius
+```
+
+Everything else below is always available — no import needed.
 
 **Convert**: `to_text(x)`, `to_number(text)`, `length(x)`.
 
@@ -456,7 +518,67 @@ window "Demo" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
 
 **Time**: `now()` (seconds since 1970), `clock()` (seconds since the program started).
 
-**Output**: `print(...)`.
+**Input / output**: `print(...)`, `input(prompt)`.
+
+`input` shows an optional prompt, waits for the person to type a line, and gives it back as
+**Text** (use `to_number(...)` if you need a number):
+
+```plaintext
+name = input("What's your name? ")
+age = to_number(input("Your age? "))
+print("Hi {name}, next year you'll be {age + 1}.")
+```
+
+**Stopping**: `exit()` ends the program right away; `exit(code)` ends it with a status code
+(`0` means success). Inside a `game` or `window`, `exit()` closes the window.
+
+```plaintext
+if lives <= 0 {
+    print("Game over.")
+    exit()
+}
+```
+
+---
+
+## 13. Splitting a program across files
+
+Keep helpers in their own file and pull them in with `import` and a quoted path:
+
+```plaintext
+// helpers.pt
+make function called double(n) { return n * 2 }
+tax_rate = 0.2
+```
+
+```plaintext
+// main.pt
+import "./helpers.pt"
+
+print(double(21))          // 42
+print(100 * tax_rate)      // 20
+```
+
+The path is relative to the file doing the importing. Everything defined at the top of the
+imported file — functions, classes, and variables — becomes available. Importing the same file
+from several places only loads it once, and import cycles are handled safely. (An imported file
+can't itself contain a `game` or `window` block.)
+
+---
+
+## The REPL
+
+Run `plaintext repl` for an interactive session. Type an expression to see its value; anything
+you define sticks around for later lines. Multi-line blocks (functions, `if`, …) keep reading
+until their braces close. Type `exit` to leave.
+
+```text
+> 2 + 2
+4
+> greeting = "hi"
+> greeting.upper()
+HI
+```
 
 ---
 

@@ -56,6 +56,7 @@ Or copy an example:
 ```bash
 plaintext run examples/basics.pt
 plaintext check examples/basics.pt
+plaintext repl
 ```
 
 ## 3. Editor support (VS Code)
@@ -72,8 +73,10 @@ Then reload the window. `.pt` files get syntax highlighting and the PlainText ic
 
 ## 4. Learn the language
 
-- [Language reference](docs/language-reference.md) — full guide
-- [examples/](examples/) — small programs for the core language, games, and UI
+- **[docs/README.md](docs/README.md)** — start here (lesson map)
+- **[docs/learn/](docs/learn/)** — short teacher-style lessons (01 → 11)
+- **[Language reference](docs/language-reference.md)** — full guide when you need details
+- **[examples/](examples/)** — small runnable programs
 
 Useful commands:
 
@@ -81,8 +84,16 @@ Useful commands:
 |---------|----------------|
 | `plaintext run file.pt` | Type-check and run |
 | `plaintext check file.pt` | Type-check only |
+| `plaintext repl` | Interactive prompt |
 | `plaintext new name` | Scaffold a project folder |
 | `plaintext version` | Print the version |
+
+### Quick language tips
+
+- Math helpers need `import math` at the top of the file (`sqrt`, `pi`, `random_between`, …).
+- Prefer wordy comparisons when it helps reading: `score is at least 90`.
+- Use `increase x by n` / `decrease x by n` instead of `x = x + n`.
+- Split files with `import "./other.pt"`.
 
 ## 5. Windows file icon (optional)
 

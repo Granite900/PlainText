@@ -1,0 +1,100 @@
+// Catch — a complete little arcade game.
+// Move the basket with the LEFT/RIGHT arrows and catch the falling fruit.
+// Miss three and it's game over; press SPACE to play again.
+
+import math   // for random_between() and clamp()
+
+class Fruit {
+    x: Number
+    y: Number
+    speed: Number
+}
+
+fruits: Fruit list = []
+basket_x = 400
+basket_y = 560
+basket_w = 110
+score = 0
+lives = 3
+game_over = false
+
+make function called spawn_fruit() {
+    if game_over {
+        return
+    }
+    fruits.append(Fruit { x: random_between(30, 770), y: -20, speed: random_between(160, 320) })
+}
+
+make function called restart() {
+    fruits = []
+    score = 0
+    lives = 3
+    game_over = false
+}
+
+// One repeating timer drives all spawning for the whole game.
+every(0.8, spawn_fruit)
+
+game "Catch" (width: 800, height: 600) {
+
+    on update(delta) {
+        if game_over {
+            if key_pressed("space") {
+                restart()
+            }
+            return
+        }
+
+        // Move the basket, keeping it on screen.
+        if key_down("left") {
+            decrease basket_x by 480 * delta
+        }
+        if key_down("right") {
+            increase basket_x by 480 * delta
+        }
+        basket_x = clamp(basket_x, basket_w / 2, 800 - basket_w / 2)
+
+        // Move fruit and resolve catches / misses.
+        kept: Fruit list = []
+        for every fruit in fruits {
+            fruit.y = fruit.y + fruit.speed * delta
+
+            caught = fruit.y >= basket_y and fruit.x >= basket_x - basket_w / 2 and fruit.x <= basket_x + basket_w / 2
+            missed = fruit.y > 600
+
+            if caught {
+                increase score by 1
+            } else if missed {
+                decrease lives by 1
+                if lives is at most 0 {
+                    game_over = true
+                }
+            } else {
+                kept.append(fruit)
+            }
+        }
+        fruits = kept
+    }
+
+    on draw() {
+        clear_screen(rgb(20, 24, 40))
+
+        // Fruit.
+        for every fruit in fruits {
+            draw_circle(fruit.x, fruit.y, 16, red)
+        }
+
+        // Basket.
+        draw_rectangle(basket_x - basket_w / 2, basket_y, basket_w, 24, gold)
+
+        // HUD.
+        draw_text("Score: {score}", 20, 20, 24, white)
+        draw_text("Lives: {lives}", 660, 20, 24, white)
+
+        if game_over {
+            draw_rectangle(0, 250, 800, 110, rgba(0, 0, 0, 180))
+            draw_text("Game over — final score {score}", 190, 275, 28, gold)
+            draw_text("Press SPACE to play again", 235, 315, 20, white)
+        }
+    }
+}

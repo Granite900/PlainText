@@ -1,0 +1,9 @@
+// Ask the user a couple of questions from the console.
+// Run with:  plaintext run examples/ask.pt
+
+name = input("What is your name? ")
+print("Nice to meet you, {name}!")
+
+age_text = input("How old are you? ")
+age = to_number(age_text)
+print("Next year you will be {age + 1}.")

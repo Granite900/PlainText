@@ -163,18 +163,39 @@ Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged rel
 (`v2.8.0`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
-## How it works
+## Changes since 2.0
 
-PlainText is a tree-walking interpreter written in Rust: **lexer → parser → type checker →
-interpreter**, with a standard library and Raylib-backed game/UI APIs. Memory is reference
-counted with a mark-and-sweep collector on top to reclaim reference cycles, so you never manage
-memory yourself. See [docs/language-reference.md](docs/language-reference.md) for the language.
-
-Being a tree-walker, it favors clarity over raw speed — great for games, UIs, and learning, but
-slower than an optimized bytecode VM on tight numeric loops (see [benchmarks/](benchmarks/)). The
-one place that matters most, neural-network training, drops to compiled Rust and an optional GPU.
-
-## Status
-
-The full language, type checker, standard library, 2D game API (shapes, sprites, input, timers),
-declarative UI system, and a cycle-collecting garbage collector all work today.
+Language & modules
+Inline / anonymous functions — make function (…) { … } for map/filter, on_click, timers, etc.
+Richer UI — text_field, checkbox, slider, image, plus bind / on_change
+import gamekit — physics world, bodies, hitboxes, gravity/solids, pressed, draw helpers
+import web — web.get / web.get_json / web.post_json, to_json / parse_json (local paths for offline CI)
+Neuroevolution / datasets — evolve-style NN work, dataset loading, decimal rounding (early post-2.0)
+Tooling & editor
+plaintext lsp — diagnostics (same as check), hover, go-to-def, completions
+VS Code extension — spawns the LSP; clearer install docs
+Shared src/load.rs for CLI + LSP
+Platforms & releases
+Linux x64 builds + install-linux.sh
+Intel Mac builds (plaintext-macos-x64.zip)
+Still: Windows x64, macOS arm64
+Automated setup scripts, wider CI smokes (examples, console, plaintext build on all four)
+Docs & examples
+New lessons: game kit (12), NN (13), web (14)
+Examples condensed (~23 → ~14) with an index; several demos merged or removed
+Docs/benchmarks polish (2.2)
+Version trail
+Version	Focus
+2.0
+NN / GPU / build baseline
+2.2
+Docs, benchmarks, neuroevolution/datasets
+2.4
+Lambdas + form UI
+2.5–2.6*
+gamekit + web (shipped in 2.8)
+2.7*
+LSP + VS Code client (shipped in 2.8)
+2.8
+Linux + Intel Mac releases
+* Intermediate tracks landed in the 2.8 release rather than separate tags.

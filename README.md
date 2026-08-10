@@ -166,10 +166,13 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v2.9.0`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
+(`v2.9.1`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## What's new
+
+**2.9.1** — faster variable lookup/assignment in tight loops (`FxHashMap` scopes; assign without
+re-allocating the key string).
 
 **2.9** — a bigger toolbox for apps and games:
 

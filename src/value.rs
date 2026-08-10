@@ -12,6 +12,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use rustc_hash::FxHashMap;
+
 use crate::ast::FunctionDecl;
 
 pub type Env = Rc<RefCell<Scope>>;
@@ -595,18 +597,24 @@ impl PtMap {
 
 /// A lexical scope. Only function calls (and the top-level module) create one;
 /// `if`/`while`/`for` blocks share their enclosing function's scope.
+///
+/// Variable lookup is the interpreter's hottest operation (a tight loop hits it
+/// several times per iteration), so this map uses `FxHashMap` — the same fast,
+/// non-cryptographic hasher rustc itself uses — instead of the standard
+/// library's SipHash, which is much slower for the tiny string keys (`i`, `n`)
+/// typical of program variables.
 pub struct Scope {
-    vars: HashMap<String, Value>,
+    vars: FxHashMap<String, Value>,
     parent: Option<Env>,
 }
 
 impl Scope {
     pub fn new_global() -> Env {
-        Rc::new(RefCell::new(Scope { vars: HashMap::new(), parent: None }))
+        Rc::new(RefCell::new(Scope { vars: FxHashMap::default(), parent: None }))
     }
 
     pub fn new_child(parent: &Env) -> Env {
-        Rc::new(RefCell::new(Scope { vars: HashMap::new(), parent: Some(parent.clone()) }))
+        Rc::new(RefCell::new(Scope { vars: FxHashMap::default(), parent: Some(parent.clone()) }))
     }
 }
 
@@ -634,8 +642,12 @@ pub fn env_set(env: &Env, name: &str, value: Value) {
 
 fn assign_existing(env: &Env, name: &str, value: &Value) -> bool {
     let mut scope = env.borrow_mut();
-    if scope.vars.contains_key(name) {
-        scope.vars.insert(name.to_string(), value.clone());
+    // `get_mut` finds and overwrites in a single hash lookup — the old
+    // `contains_key` + `insert(name.to_string(), …)` hashed twice and allocated
+    // a fresh String key on every reassignment (this runs millions of times in
+    // a tight loop, so it mattered).
+    if let Some(slot) = scope.vars.get_mut(name) {
+        *slot = value.clone();
         return true;
     }
     match &scope.parent {

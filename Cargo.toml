@@ -1,6 +1,6 @@
 [package]
 name = "plaintext"
-version = "2.9.0"
+version = "2.9.1"
 edition = "2021"
 description = "The PlainText programming language — a readability-first language for desktop UIs and 2D games."
 
@@ -11,6 +11,7 @@ pollster = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
 ureq = "2"
 serde_json = "1"
+rustc-hash = "2"
 tower-lsp = "0.20"
 tokio = { version = "1.53.1", features = ["macros", "io-std", "io-util", "rt-multi-thread", "sync", "time"] }
 

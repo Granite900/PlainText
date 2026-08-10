@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use raylib::core::drawing::RaylibScissorModeExt;
 use raylib::prelude::*;
 
 use crate::tilemap_edit_source::{
@@ -27,6 +28,19 @@ struct EditorState {
     backed_up: bool,
     /// Texture id per image path (loaded lazily).
     textures: HashMap<String, Texture2D>,
+    /// Map view: pan in screen pixels (grid origin relative to LEFT/TOP).
+    pan_x: f32,
+    pan_y: f32,
+    /// Multiplier on [`CELL_VIEW`] (clamped).
+    zoom: f32,
+    /// Last mouse pos while middle-drag / Space-drag panning.
+    drag_mx: i32,
+    drag_my: i32,
+    panning: bool,
+}
+
+fn cell_px(zoom: f32) -> i32 {
+    ((CELL_VIEW as f32) * zoom).round().clamp(6.0, 96.0) as i32
 }
 
 pub fn run(path: &Path) -> Result<(), String> {
@@ -54,10 +68,17 @@ pub fn run(path: &Path) -> Result<(), String> {
         source: source.clone(),
         doc,
         selected: '#',
-        status: "Left-click paint · Right-click erase (.) · S solid · Ctrl+S save · drop PNG onto window".into(),
+        status: "Paint · MMB/Space-drag pan · Wheel zoom · S solid · Ctrl+S save · drop PNG"
+            .into(),
         dirty: false,
         backed_up: false,
         textures: HashMap::new(),
+        pan_x: 0.0,
+        pan_y: 0.0,
+        zoom: 1.0,
+        drag_mx: 0,
+        drag_my: 0,
+        panning: false,
     };
 
     // Preload any mapped PNGs.
@@ -171,6 +192,54 @@ fn handle_input(rl: &mut RaylibHandle, thread: &RaylibThread, state: &mut Editor
 
     let mx = rl.get_mouse_x();
     let my = rl.get_mouse_y();
+    let over_map = mx >= LEFT && my >= TOP;
+
+    // Pan: middle mouse, or Space + left drag (only over the map).
+    let space = rl.is_key_down(KeyboardKey::KEY_SPACE);
+    let mid = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_MIDDLE);
+    let space_drag = space && rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
+    if over_map && (mid || space_drag) {
+        if !state.panning {
+            state.panning = true;
+            state.drag_mx = mx;
+            state.drag_my = my;
+        } else {
+            state.pan_x += (mx - state.drag_mx) as f32;
+            state.pan_y += (my - state.drag_my) as f32;
+            state.drag_mx = mx;
+            state.drag_my = my;
+        }
+    } else {
+        state.panning = false;
+    }
+
+    // Arrow keys nudge the view.
+    let step = 24.0;
+    if rl.is_key_down(KeyboardKey::KEY_LEFT) {
+        state.pan_x += step;
+    }
+    if rl.is_key_down(KeyboardKey::KEY_RIGHT) {
+        state.pan_x -= step;
+    }
+    if rl.is_key_down(KeyboardKey::KEY_UP) {
+        state.pan_y += step;
+    }
+    if rl.is_key_down(KeyboardKey::KEY_DOWN) {
+        state.pan_y -= step;
+    }
+
+    // Wheel zoom toward the cursor (over the map).
+    let wheel = rl.get_mouse_wheel_move();
+    if over_map && wheel != 0.0 {
+        let old_cell = cell_px(state.zoom) as f32;
+        let before_col = (mx as f32 - LEFT as f32 - state.pan_x) / old_cell;
+        let before_row = (my as f32 - TOP as f32 - state.pan_y) / old_cell;
+        let factor = if wheel > 0.0 { 1.12 } else { 1.0 / 1.12 };
+        state.zoom = (state.zoom * factor).clamp(0.25, 4.0);
+        let new_cell = cell_px(state.zoom) as f32;
+        state.pan_x = mx as f32 - LEFT as f32 - before_col * new_cell;
+        state.pan_y = my as f32 - TOP as f32 - before_row * new_cell;
+    }
 
     // Palette clicks
     if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) && mx < LEFT - 8 {
@@ -186,18 +255,20 @@ fn handle_input(rl: &mut RaylibHandle, thread: &RaylibThread, state: &mut Editor
         }
     }
 
-    // Grid paint
-    if let Some((col, row)) = grid_cell(mx, my, state.doc.width(), state.doc.height()) {
-        if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
-            if state.doc.tile_at(col, row) != state.selected {
-                state.doc.set_tile(col, row, state.selected);
-                state.dirty = true;
+    // Grid paint (not while panning / Space held)
+    if !state.panning && !space {
+        if let Some((col, row)) = grid_cell(mx, my, state) {
+            if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
+                if state.doc.tile_at(col, row) != state.selected {
+                    state.doc.set_tile(col, row, state.selected);
+                    state.dirty = true;
+                }
             }
-        }
-        if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_RIGHT) {
-            if state.doc.tile_at(col, row) != '.' {
-                state.doc.set_tile(col, row, '.');
-                state.dirty = true;
+            if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_RIGHT) {
+                if state.doc.tile_at(col, row) != '.' {
+                    state.doc.set_tile(col, row, '.');
+                    state.dirty = true;
+                }
             }
         }
     }
@@ -223,13 +294,19 @@ fn revert_button_hit(mx: i32, my: i32) -> bool {
     mx >= 16 && mx < 140 && my >= 48 && my < 76
 }
 
-fn grid_cell(mx: i32, my: i32, cols: usize, rows: usize) -> Option<(usize, usize)> {
+fn grid_cell(mx: i32, my: i32, state: &EditorState) -> Option<(usize, usize)> {
     if mx < LEFT || my < TOP {
         return None;
     }
-    let col = ((mx - LEFT) / CELL_VIEW) as usize;
-    let row = ((my - TOP) / CELL_VIEW) as usize;
-    if col < cols && row < rows {
+    let cell = cell_px(state.zoom) as f32;
+    let col = ((mx as f32 - LEFT as f32 - state.pan_x) / cell).floor() as i32;
+    let row = ((my as f32 - TOP as f32 - state.pan_y) / cell).floor() as i32;
+    if col < 0 || row < 0 {
+        return None;
+    }
+    let col = col as usize;
+    let row = row as usize;
+    if col < state.doc.width() && row < state.doc.height() {
         Some((col, row))
     } else {
         None
@@ -276,6 +353,8 @@ fn revert(state: &mut EditorState) {
 }
 
 fn draw_frame(rl: &mut RaylibHandle, thread: &RaylibThread, state: &EditorState) {
+    let win_w = rl.get_screen_width();
+    let win_h = rl.get_screen_height();
     let mut d = rl.begin_drawing(thread);
     d.clear_background(Color::new(36, 38, 45, 255));
 
@@ -309,48 +388,71 @@ fn draw_frame(rl: &mut RaylibHandle, thread: &RaylibThread, state: &EditorState)
         }
     }
 
-    // Grid
+    // Grid (clipped to the map viewport; pan + zoom applied).
     let cols = state.doc.width();
     let rows = state.doc.height();
-    for row in 0..rows {
-        for col in 0..cols {
-            let x = LEFT + col as i32 * CELL_VIEW;
-            let y = TOP + row as i32 * CELL_VIEW;
-            let ch = state.doc.tile_at(col, row);
-            let mut filled = false;
-            if let Some(path) = state.doc.tiles.get(&ch) {
-                if let Some(tex) = state.textures.get(path) {
-                    let scale = CELL_VIEW as f32 / tex.width().max(1) as f32;
-                    d.draw_texture_ex(tex, Vector2::new(x as f32, y as f32), 0.0, scale, Color::WHITE);
-                    filled = true;
+    let cell = cell_px(state.zoom);
+    let view_w = (win_w - LEFT).max(1);
+    let view_h = (win_h - TOP).max(1);
+
+    d.draw_scissor_mode(LEFT, TOP, view_w, view_h, |mut sd| {
+        for row in 0..rows {
+            for col in 0..cols {
+                let x = LEFT + state.pan_x as i32 + col as i32 * cell;
+                let y = TOP + state.pan_y as i32 + row as i32 * cell;
+                // Skip cells fully outside the viewport.
+                if x + cell < LEFT || y + cell < TOP || x > LEFT + view_w || y > TOP + view_h {
+                    continue;
                 }
-            }
-            if !filled {
-                let color = char_color(ch, state.doc.is_solid(ch));
-                d.draw_rectangle(x, y, CELL_VIEW - 1, CELL_VIEW - 1, color);
-                if ch != '.' {
-                    let label = ch.to_string();
-                    d.draw_text(&label, x + 8, y + 4, 16, Color::WHITE);
+                let ch = state.doc.tile_at(col, row);
+                let mut filled = false;
+                if let Some(path) = state.doc.tiles.get(&ch) {
+                    if let Some(tex) = state.textures.get(path) {
+                        let scale = cell as f32 / tex.width().max(1) as f32;
+                        sd.draw_texture_ex(
+                            tex,
+                            Vector2::new(x as f32, y as f32),
+                            0.0,
+                            scale,
+                            Color::WHITE,
+                        );
+                        filled = true;
+                    }
                 }
+                if !filled {
+                    let color = char_color(ch, state.doc.is_solid(ch));
+                    sd.draw_rectangle(x, y, cell - 1, cell - 1, color);
+                    if ch != '.' && cell >= 14 {
+                        let label = ch.to_string();
+                        sd.draw_text(
+                            &label,
+                            x + cell / 4,
+                            y + cell / 5,
+                            (cell / 2).max(10),
+                            Color::WHITE,
+                        );
+                    }
+                }
+                sd.draw_rectangle_lines(x, y, cell, cell, Color::new(20, 20, 25, 255));
             }
-            d.draw_rectangle_lines(x, y, CELL_VIEW, CELL_VIEW, Color::new(20, 20, 25, 255));
         }
-    }
+    });
 
     let dirty = if state.dirty { "  • unsaved" } else { "" };
     let header = format!(
-        "{}  {}×{}{}",
+        "{}  {}×{}  zoom {:.0}%{}",
         state.path.display(),
         cols,
         rows,
+        state.zoom * 100.0,
         dirty
     );
     d.draw_text(&header, LEFT, 16, 18, Color::RAYWHITE);
     d.draw_text(&state.status, LEFT, 36, 16, Color::new(180, 200, 160, 255));
     d.draw_text(
-        "Drop a PNG to assign it to the selected character. P = spawn marker.",
+        "MMB or Space-drag to pan · Wheel to zoom · Drop PNG onto selected character · P = spawn",
         LEFT,
-        TOP + rows as i32 * CELL_VIEW + 12,
+        win_h - 28,
         16,
         Color::LIGHTGRAY,
     );

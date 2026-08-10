@@ -119,6 +119,7 @@ PNG images, WAV/OGG/MP3 audio, and TTF fonts are supported.
 | Example | Idea |
 |---------|------|
 | [`timers.pt`](../../examples/timers.pt) | `after` / `every` |
+| [`save.pt`](../../examples/save.pt) | Remember a high score across runs ([lesson 8](08-math-and-tools.md)) |
 | [`camera_sheets.pt`](../../examples/camera_sheets.pt) | Camera follow + sprite-sheet walk cycle + HUD |
 | [`audio.pt`](../../examples/audio.pt) | Sounds, looping SFX, streamed music, volume / fade |
 | [`catch.pt`](../../examples/catch.pt) | Full arcade loop (score, lives, restart) |

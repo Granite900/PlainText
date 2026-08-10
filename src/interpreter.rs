@@ -2483,6 +2483,24 @@ impl Interpreter {
                 let color = self.as_color(&args[4], span)?;
                 self.push_draw(DrawCmd::Text { text, x, y, size, color, font: None }, span)
             }
+            Builtin::DrawTextScreen => {
+                self.expect_arity("draw_text_screen", &args, 5, span)?;
+                let text = args[0].display();
+                let x = self.as_number(&args[1], span)? as f32;
+                let y = self.as_number(&args[2], span)? as f32;
+                let size = self.as_number(&args[3], span)? as i32;
+                let color = self.as_color(&args[4], span)?;
+                self.push_draw(DrawCmd::ScreenText { text, x, y, size, color, font: None }, span)
+            }
+            Builtin::DrawRectangleScreen => {
+                self.expect_arity("draw_rectangle_screen", &args, 5, span)?;
+                let x = self.as_number(&args[0], span)? as f32;
+                let y = self.as_number(&args[1], span)? as f32;
+                let w = self.as_number(&args[2], span)? as f32;
+                let h = self.as_number(&args[3], span)? as f32;
+                let color = self.as_color(&args[4], span)?;
+                self.push_draw(DrawCmd::ScreenRect { x, y, w, h, color }, span)
+            }
             Builtin::ScreenWidth | Builtin::ScreenHeight => {
                 self.expect_arity(b.name(), &args, 0, span)?;
                 let g = self.gfx_or_err(span)?;
@@ -2520,6 +2538,34 @@ impl Interpreter {
                 let id = g.borrow_mut().queue_sprite(path);
                 Ok(Value::Number(id as f64))
             }
+            Builtin::LoadSpriteSheet => {
+                // `load_sprite_sheet(path, cell_width: 32, cell_height: 32)`
+                if args.is_empty() || args.len() > 2 {
+                    return Err(Diagnostic::new(
+                        span,
+                        "load_sprite_sheet needs a path and cell_width / cell_height",
+                    )
+                    .with_hint(
+                        "e.g. load_sprite_sheet(\"hero.png\", cell_width: 32, cell_height: 32)",
+                    ));
+                }
+                let path = self.as_text(&args[0], span)?;
+                if !std::path::Path::new(&path).exists() {
+                    return Err(Diagnostic::new(span, format!("couldn't find sprite file \"{}\"", path)));
+                }
+                let opts = args.get(1);
+                let cell_w = self.opt_number(opts, "cell_width", 0.0, span)? as i32;
+                let cell_h = self.opt_number(opts, "cell_height", 0.0, span)? as i32;
+                if cell_w <= 0 || cell_h <= 0 {
+                    return Err(Diagnostic::new(
+                        span,
+                        "load_sprite_sheet needs positive cell_width and cell_height",
+                    ));
+                }
+                let g = self.gfx_or_err(span)?;
+                let id = g.borrow_mut().queue_sprite_sheet(path, cell_w, cell_h);
+                Ok(Value::Number(id as f64))
+            }
             Builtin::DrawSprite => {
                 self.expect_arity("draw_sprite", &args, 3, span)?;
                 let id = self.as_index(&args[0], span)?;
@@ -2543,16 +2589,164 @@ impl Interpreter {
                 let rotation = self.as_number(&args[3], span)? as f32;
                 self.push_draw(DrawCmd::Sprite { id, x, y, scale: 1.0, rotation }, span)
             }
+            Builtin::DrawFrame | Builtin::DrawFrameScaled => {
+                // draw_frame(sheet, frame, x, y [, scale] [, flip_x: true])
+                // Trailing keyword options become a dictionary argument.
+                let (scale, opts_idx) = if b == Builtin::DrawFrameScaled {
+                    if args.len() < 5 {
+                        return Err(Diagnostic::new(
+                            span,
+                            "draw_frame_scaled needs a sheet, frame, x, y, and scale",
+                        ));
+                    }
+                    (self.as_number(&args[4], span)? as f32, 5)
+                } else if args.len() >= 4 {
+                    (1.0_f32, 4)
+                } else {
+                    return Err(Diagnostic::new(
+                        span,
+                        "draw_frame needs a sheet, frame, x, and y",
+                    )
+                    .with_hint("e.g. draw_frame(sheet, frame, x, y) or draw_frame(..., flip_x: true)"));
+                };
+                let id = self.as_index(&args[0], span)?;
+                let frame = self.as_number(&args[1], span)? as i32;
+                let x = self.as_number(&args[2], span)? as f32;
+                let y = self.as_number(&args[3], span)? as f32;
+                let flip_x = self.opt_bool(args.get(opts_idx), "flip_x", false, span)?;
+                let g = self.gfx_or_err(span)?;
+                let (cell_w, cell_h) = match g.borrow().sheet_meta.get(&id).copied() {
+                    Some(meta) => meta,
+                    None => {
+                        return Err(Diagnostic::new(
+                            span,
+                            "draw_frame needs a sprite sheet from load_sprite_sheet",
+                        )
+                        .with_hint("use load_sprite_sheet(path, cell_width: …, cell_height: …)"));
+                    }
+                };
+                self.push_draw(
+                    DrawCmd::SpriteFrame {
+                        id,
+                        frame,
+                        cell_w,
+                        cell_h,
+                        x,
+                        y,
+                        scale,
+                        flip_x,
+                    },
+                    span,
+                )
+            }
             Builtin::SpriteWidth | Builtin::SpriteHeight => {
                 self.expect_arity(b.name(), &args, 1, span)?;
                 let id = self.as_index(&args[0], span)?;
                 let g = self.gfx_or_err(span)?;
                 let size = g.borrow().sprite_sizes.get(&id).copied();
                 let n = match size {
-                    Some((w, h)) => if b == Builtin::SpriteWidth { w } else { h },
+                    Some((w, h)) => {
+                        if b == Builtin::SpriteWidth {
+                            w
+                        } else {
+                            h
+                        }
+                    }
                     None => 0, // not loaded yet (e.g. read during init, before the window opens)
                 };
                 Ok(Value::Number(n as f64))
+            }
+            Builtin::FrameCount => {
+                self.expect_arity("frame_count", &args, 1, span)?;
+                let id = self.as_index(&args[0], span)?;
+                let g = self.gfx_or_err(span)?;
+                let g = g.borrow();
+                let Some((cw, ch)) = g.sheet_meta.get(&id).copied() else {
+                    return Err(Diagnostic::new(
+                        span,
+                        "frame_count needs a sprite sheet from load_sprite_sheet",
+                    ));
+                };
+                let (tw, th) = g.sprite_sizes.get(&id).copied().unwrap_or((0, 0));
+                Ok(Value::Number(crate::gfx::sheet_frame_count(tw, th, cw, ch) as f64))
+            }
+            Builtin::SetCamera => {
+                self.expect_arity("set_camera", &args, 2, span)?;
+                let x = self.as_number(&args[0], span)? as f32;
+                let y = self.as_number(&args[1], span)? as f32;
+                let g = self.gfx_or_err(span)?;
+                let mut g = g.borrow_mut();
+                g.camera_x = x;
+                g.camera_y = y;
+                g.apply_camera_bounds();
+                Ok(Value::Nothing)
+            }
+            Builtin::CenterCamera => {
+                self.expect_arity("center_camera", &args, 2, span)?;
+                let x = self.as_number(&args[0], span)? as f32;
+                let y = self.as_number(&args[1], span)? as f32;
+                let g = self.gfx_or_err(span)?;
+                let mut g = g.borrow_mut();
+                g.camera_x = x - g.screen_w as f32 / 2.0;
+                g.camera_y = y - g.screen_h as f32 / 2.0;
+                g.apply_camera_bounds();
+                Ok(Value::Nothing)
+            }
+            Builtin::CameraBounds => {
+                self.expect_arity("camera_bounds", &args, 4, span)?;
+                let min_x = self.as_number(&args[0], span)? as f32;
+                let min_y = self.as_number(&args[1], span)? as f32;
+                let max_x = self.as_number(&args[2], span)? as f32;
+                let max_y = self.as_number(&args[3], span)? as f32;
+                if max_x < min_x || max_y < min_y {
+                    return Err(Diagnostic::new(
+                        span,
+                        "camera_bounds needs max_x >= min_x and max_y >= min_y",
+                    ));
+                }
+                let g = self.gfx_or_err(span)?;
+                let mut g = g.borrow_mut();
+                g.camera_bounds = Some((min_x, min_y, max_x, max_y));
+                g.apply_camera_bounds();
+                Ok(Value::Nothing)
+            }
+            Builtin::CameraX | Builtin::CameraY => {
+                self.expect_arity(b.name(), &args, 0, span)?;
+                let g = self.gfx_or_err(span)?;
+                let g = g.borrow();
+                Ok(Value::Number(if b == Builtin::CameraX {
+                    g.camera_x as f64
+                } else {
+                    g.camera_y as f64
+                }))
+            }
+            Builtin::Burst => {
+                // burst(x, y, color, count) or with speed: / life: options.
+                if args.len() < 4 || args.len() > 5 {
+                    return Err(Diagnostic::new(
+                        span,
+                        "burst needs x, y, color, and count",
+                    )
+                    .with_hint("e.g. burst(x, y, orange, 16) or burst(..., speed: 200, life: 0.5)"));
+                }
+                let x = self.as_number(&args[0], span)? as f32;
+                let y = self.as_number(&args[1], span)? as f32;
+                let color = self.as_color(&args[2], span)?;
+                let count = self.as_number(&args[3], span)? as i32;
+                let opts = args.get(4);
+                let speed = self.opt_number(opts, "speed", 180.0, span)? as f32;
+                let life = self.opt_number(opts, "life", 0.45, span)? as f32;
+                let g = self.gfx_or_err(span)?;
+                crate::gfx::spawn_burst(
+                    &mut g.borrow_mut().particles,
+                    x,
+                    y,
+                    color,
+                    count,
+                    speed.max(0.0),
+                    life.max(0.0),
+                );
+                Ok(Value::Nothing)
             }
             Builtin::LoadSound => {
                 self.expect_arity("load_sound", &args, 1, span)?;

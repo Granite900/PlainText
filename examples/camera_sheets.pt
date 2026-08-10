@@ -1,0 +1,90 @@
+// Camera + sprite sheets + bounds + particles.
+// Arrow keys move a walker; Space pops a burst. The camera follows and stays
+// inside the world via camera_bounds. HUD uses draw_text_screen.
+// Run from the repo root:
+//   plaintext run examples/camera_sheets.pt
+
+sheet = load_sprite_sheet("examples/assets/walk.png", cell_width: 32, cell_height: 32)
+frames = 4
+
+x = 80
+y = 260
+facing = 1
+frame = 0
+anim_t = 0
+score = 0
+
+// World size the camera may show (wider than the window).
+world_w = 2000
+world_h = 360
+
+game "Camera + sheets" (width: 640, height: 360) {
+    on start() {
+        n = frame_count(sheet)
+        if n is more than 0 {
+            frames = n
+        }
+        camera_bounds(0, 0, world_w, world_h)
+    }
+
+    on update(delta) {
+        speed = 180
+        moving = false
+        if key_down("left") or key_down("a") {
+            x = x - speed * delta
+            facing = -1
+            moving = true
+        }
+        if key_down("right") or key_down("d") {
+            x = x + speed * delta
+            facing = 1
+            moving = true
+        }
+        if x is less than 0 { x = 0 }
+        if x is more than world_w - 32 { x = world_w - 32 }
+
+        if key_pressed("space") {
+            burst(x + 16, y + 16, orange, 18, speed: 220, life: 0.5)
+            increase score by 5
+        }
+
+        if moving {
+            anim_t = anim_t + delta
+            if anim_t is more than 0.12 {
+                anim_t = 0
+                frame = frame + 1
+                if frame is at least frames {
+                    frame = 0
+                }
+                increase score by 1
+            }
+        } else {
+            frame = 0
+            anim_t = 0
+        }
+
+        center_camera(x + 16, y + 16)
+    }
+
+    on draw() {
+        clear_screen(rgb(40, 50, 70))
+
+        draw_rectangle(0, 300, world_w, 80, rgb(55, 90, 55))
+        n = 0
+        while n is less than 21 {
+            draw_rectangle(n * 100, 280, 8, 20, rgb(90, 70, 40))
+            draw_text("{n * 100}", n * 100, 250, 16, lightgray)
+            n = n + 1
+        }
+
+        if facing is 1 {
+            draw_frame(sheet, frame, x, y)
+        } else {
+            draw_frame(sheet, frame, x, y, flip_x: true)
+        }
+
+        draw_rectangle_screen(8, 8, 220, 56, rgb(20, 24, 32))
+        draw_text_screen("steps: {score}", 16, 16, 22, white)
+        draw_text_screen("Space = burst · cam clamped", 16, 42, 14, skyblue)
+    }
+}

@@ -126,15 +126,20 @@ game "Title" (width: 800, height: 600) {
     on update(delta) {
         if key_down("left") { decrease x by 200 * delta }   // held
         if key_pressed("space") { play_sound(beep) }        // just pressed
+        center_camera(x, y)                                 // world scroll
+        // camera_bounds(0, 0, world_w, world_h)
+        // burst(x, y, orange, 16)  // also speed: / life:
         // play_sound(beep, loop: true) / stop_sound(beep)
         // play_music(tune) / fade_music(tune, 0, 2) / stop_music(tune)
         // set_sound_volume / set_music_volume (0..1), also _pitch / _pan
     }
     on draw() {
         clear_screen(skyblue)
-        draw_circle(x, y, 20, red)
+        draw_circle(x, y, 20, red)                          // world space
         draw_sprite(ship, x, y)                             // also _scaled / _rotated
-        draw_text("Score: {score}", 20, 20, 24, white)
+        // sheet = load_sprite_sheet(..., cell_width: 32, cell_height: 32)
+        // draw_frame(sheet, frame, x, y) / flip_x: true
+        draw_text_screen("Score: {score}", 20, 20, 24, white)  // HUD (screen space)
     }
 }
 ```

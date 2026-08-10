@@ -497,6 +497,9 @@ frame, for drawing).
 - `draw_line(x1, y1, x2, y2, color)`
 - `draw_text(text, x, y, size, color)`
 
+These use **world** coordinates (see Camera below). For HUD overlays that stay put on the
+screen, use `draw_text_screen` / `draw_rectangle_screen` instead.
+
 Colors are named (`red`, `blue`, `green`, `yellow`, `white`, `black`, `skyblue`, `gray`, …) or
 built with `rgb(r, g, b)` / `rgba(r, g, b, a)` where each value is 0–255.
 
@@ -517,18 +520,67 @@ game "Sprites" (width: 800, height: 600) {
 
 Also: `sprite_width(sprite)`, `sprite_height(sprite)`.
 
+### Sprite sheets
+
+A sheet is one PNG with equal-sized cells, left-to-right then top-to-bottom:
+
+```plaintext
+sheet = load_sprite_sheet("hero.png", cell_width: 32, cell_height: 32)
+frames = frame_count(sheet)
+
+draw_frame(sheet, frame, x, y)
+draw_frame_scaled(sheet, frame, x, y, 2)
+draw_frame(sheet, frame, x, y, flip_x: true)
+```
+
+Advance `frame` yourself in `on update` (timers, walk cycles, …). Out-of-range frames draw
+nothing.
+
+### Camera
+
+`set_camera(x, y)` sets the top-left of the view in **world** space. All ordinary draws
+(`draw_sprite`, `draw_tilemap`, shapes, world `draw_text`, …) subtract that offset. Follow a
+body yourself each frame:
+
+```plaintext
+center_camera(hero.center_x, hero.center_y)   // or set_camera(hero.x - 400, hero.y - 300)
+camera_bounds(0, 0, level_width, level_height) // keep the view inside the world
+```
+
+`camera_bounds` clamps every later `set_camera` / `center_camera` so you don’t scroll past the
+level edge. Read the offset with `camera_x()` / `camera_y()`. Mouse stays in **screen** space —
+world picking is `mouse_x() + camera_x()`, `mouse_y() + camera_y()`.
+
+HUD (fixed on screen):
+
+```plaintext
+draw_text_screen("Score: {score}", 20, 20, 24, white)
+draw_rectangle_screen(10, 10, 120, 16, red)
+```
+
+### Particles
+
+```plaintext
+burst(x, y, orange, 16)                      // world space; short-lived sparks
+burst(x, y, gold, 24, speed: 220, life: 0.5)
+```
+
+Particles update and draw themselves each frame (with a little gravity). No need to store them.
+
+See [`examples/camera_sheets.pt`](../examples/camera_sheets.pt).
+
 **Where image files go.** `load_sprite("ship.png")` looks for the file **relative to the folder
 you run `plaintext` from**, not the folder the `.pt` file is in. A common tidy layout is an
 `assets/` folder next to your program, loaded as `load_sprite("assets/ship.png")` and run from
 that program's folder. PNG works everywhere; if a sprite doesn't appear, a wrong path is the
 usual cause. The same rule applies to `load_sound`, `load_music`, and `load_font`. Supported:
-`.png` images, `.wav`/`.ogg` audio, `.ttf` fonts.
+`.png` images, `.wav`/`.ogg`/`.mp3` audio, `.ttf` fonts.
 
 ### Input
 
 - `key_down(name)` — held this frame. `key_pressed(name)` — pressed just now. Names: `"up"`,
   `"down"`, `"left"`, `"right"`, `"space"`, `"enter"`, `"escape"`, letters like `"w"`.
-- `mouse_x()`, `mouse_y()`, `mouse_down()`, `mouse_pressed()`.
+- `mouse_x()`, `mouse_y()`, `mouse_down()`, `mouse_pressed()` (screen space).
 - `screen_width()`, `screen_height()`.
 
 ### Sound & music
@@ -1028,8 +1080,11 @@ plaintext build game.pt -o Game    # choose the output name
 plaintext build game.pt --run      # build, then run it to check
 ```
 
-If your program loads sprites or sounds from an `assets/` folder next to it, that folder is
-copied next to the app so the paths still work.
+Assets are packed next to the app so load paths still work when friends run it elsewhere:
+
+- If there's an `assets/` folder next to your `.pt` file, that folder is copied wholesale.
+- Every literal path in `load_sprite` / `load_sprite_sheet` / `load_sound` / `load_music` /
+  `load_font` is copied too, keeping the same relative path (e.g. `examples/assets/walk.png`).
 
 **Making a Mac app (from any computer).** Building doesn't recompile — it just appends your
 program to a runtime binary — so you can build a Mac app from Windows by pointing at a macOS

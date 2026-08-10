@@ -397,7 +397,7 @@ fn cmd_build(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
     make_executable(&out_path);
-    copy_assets(&entry, &out_path);
+    pack_assets(&entry, &out_path, &loaded.program);
 
     println!("Built {} ({} KB).", out_path, image.len() / 1024);
     print_run_note(&out_path, runtime);
@@ -455,17 +455,50 @@ fn make_executable(path: &str) {
 #[cfg(not(unix))]
 fn make_executable(_path: &str) {}
 
-/// If there's an `assets/` folder next to the program, copy it beside the app so
-/// `load_sprite("assets/...")` still resolves when the app runs elsewhere.
-fn copy_assets(entry: &str, out_path: &str) {
-    let src = Path::new(entry).parent().unwrap_or(Path::new(".")).join("assets");
-    if !src.is_dir() {
-        return;
+/// Copy assets next to the built app so `load_sprite` / `load_sound` / … paths
+/// still resolve when the binary runs from another folder.
+///
+/// 1. If there's an `assets/` folder next to the entry `.pt`, copy it wholesale.
+/// 2. Also copy every literal path passed to `load_sprite`, `load_sprite_sheet`,
+///    `load_sound`, `load_music`, or `load_font`, preserving the relative path
+///    (so `examples/assets/walk.png` lands next to the exe as the same path).
+fn pack_assets(entry: &str, out_path: &str, program: &ast::Program) {
+    let out_dir = Path::new(out_path).parent().unwrap_or(Path::new("."));
+
+    let src_assets = Path::new(entry).parent().unwrap_or(Path::new(".")).join("assets");
+    if src_assets.is_dir() {
+        let dst = out_dir.join("assets");
+        match copy_dir(&src_assets, &dst) {
+            Ok(()) => println!("Copied assets/ next to the app."),
+            Err(e) => eprintln!("(note: couldn't copy assets/: {})", e),
+        }
     }
-    let dst = Path::new(out_path).parent().unwrap_or(Path::new(".")).join("assets");
-    match copy_dir(&src, &dst) {
-        Ok(()) => println!("Copied assets/ next to the app."),
-        Err(e) => eprintln!("(note: couldn't copy assets/: {})", e),
+
+    let mut paths = Vec::new();
+    collect_asset_paths_program(program, &mut paths);
+    paths.sort();
+    paths.dedup();
+    let mut copied = 0usize;
+    for rel in &paths {
+        let from = Path::new(rel);
+        if !from.is_file() {
+            eprintln!("(note: asset `{}` not found at build time — skipped)", rel);
+            continue;
+        }
+        let to = out_dir.join(rel);
+        if let Some(parent) = to.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                eprintln!("(note: couldn't create `{}`: {})", parent.display(), e);
+                continue;
+            }
+        }
+        match std::fs::copy(from, &to) {
+            Ok(_) => copied += 1,
+            Err(e) => eprintln!("(note: couldn't copy `{}`: {})", rel, e),
+        }
+    }
+    if copied > 0 {
+        println!("Packed {} asset file(s) next to the app.", copied);
     }
 }
 
@@ -482,6 +515,195 @@ fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+const ASSET_LOADERS: &[&str] = &[
+    "load_sprite",
+    "load_sprite_sheet",
+    "load_sound",
+    "load_music",
+    "load_font",
+];
+
+fn collect_asset_paths_program(program: &ast::Program, out: &mut Vec<String>) {
+    for s in &program.statements {
+        collect_asset_paths_stmt(s, out);
+    }
+}
+
+fn collect_asset_paths_stmt(stmt: &ast::Stmt, out: &mut Vec<String>) {
+    use ast::Stmt::*;
+    match stmt {
+        Assign { target, value, .. } => {
+            collect_asset_paths_expr(target, out);
+            collect_asset_paths_expr(value, out);
+        }
+        Function(f) => {
+            for p in &f.params {
+                if let Some(d) = &p.default {
+                    collect_asset_paths_expr(d, out);
+                }
+            }
+            for s in &f.body {
+                collect_asset_paths_stmt(s, out);
+            }
+        }
+        Class(c) => {
+            for f in &c.fields {
+                if let Some(d) = &f.default {
+                    collect_asset_paths_expr(d, out);
+                }
+            }
+            for m in &c.methods {
+                for s in &m.body {
+                    collect_asset_paths_stmt(s, out);
+                }
+            }
+        }
+        If { branches, else_body, .. } => {
+            for (cond, body) in branches {
+                collect_asset_paths_expr(cond, out);
+                for s in body {
+                    collect_asset_paths_stmt(s, out);
+                }
+            }
+            if let Some(body) = else_body {
+                for s in body {
+                    collect_asset_paths_stmt(s, out);
+                }
+            }
+        }
+        While { cond, body, .. } => {
+            collect_asset_paths_expr(cond, out);
+            for s in body {
+                collect_asset_paths_stmt(s, out);
+            }
+        }
+        ForEvery { iterable, body, .. } => {
+            collect_asset_paths_expr(iterable, out);
+            for s in body {
+                collect_asset_paths_stmt(s, out);
+            }
+        }
+        Repeat { count, body, .. } => {
+            collect_asset_paths_expr(count, out);
+            for s in body {
+                collect_asset_paths_stmt(s, out);
+            }
+        }
+        Loop { body, .. } => {
+            for s in body {
+                collect_asset_paths_stmt(s, out);
+            }
+        }
+        Return { value: Some(v), .. } => collect_asset_paths_expr(v, out),
+        Return { value: None, .. } | Break(_) | Continue(_) | Import { .. } | ImportFile { .. } => {}
+        Game(g) => {
+            for (_, e) in &g.props {
+                collect_asset_paths_expr(e, out);
+            }
+            for s in &g.init {
+                collect_asset_paths_stmt(s, out);
+            }
+            for h in &g.hooks {
+                for s in &h.body {
+                    collect_asset_paths_stmt(s, out);
+                }
+            }
+        }
+        Window(w) => {
+            for (_, e) in &w.props {
+                collect_asset_paths_expr(e, out);
+            }
+            for widget in &w.root {
+                collect_asset_paths_widget(widget, out);
+            }
+        }
+        Expr(e) => collect_asset_paths_expr(e, out),
+    }
+}
+
+fn collect_asset_paths_widget(w: &ast::Widget, out: &mut Vec<String>) {
+    if let Some(label) = &w.label {
+        collect_asset_paths_expr(label, out);
+    }
+    for (_, e) in &w.props {
+        collect_asset_paths_expr(e, out);
+    }
+    for c in &w.children {
+        collect_asset_paths_widget(c, out);
+    }
+}
+
+fn collect_asset_paths_expr(expr: &ast::Expr, out: &mut Vec<String>) {
+    use ast::Expr::*;
+    match expr {
+        Call { callee, args, .. } => {
+            if let Ident(name, _) = callee.as_ref() {
+                if ASSET_LOADERS.contains(&name.as_str()) {
+                    if let Some(Text(chunks, _)) = args.first() {
+                        if chunks.len() == 1 {
+                            if let ast::StrChunk::Lit(s) = &chunks[0] {
+                                if !s.is_empty() {
+                                    out.push(s.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            collect_asset_paths_expr(callee, out);
+            for a in args {
+                collect_asset_paths_expr(a, out);
+            }
+        }
+        Unary { expr, .. } | Try { expr, .. } | Field { object: expr, .. } | IsNothing { expr, .. } => {
+            collect_asset_paths_expr(expr, out);
+        }
+        Binary { left, right, .. } | Otherwise { value: left, fallback: right, .. } => {
+            collect_asset_paths_expr(left, out);
+            collect_asset_paths_expr(right, out);
+        }
+        Index { object, index, .. } => {
+            collect_asset_paths_expr(object, out);
+            collect_asset_paths_expr(index, out);
+        }
+        ListLit { items, .. } => {
+            for i in items {
+                collect_asset_paths_expr(i, out);
+            }
+        }
+        DictionaryLit { entries, .. } => {
+            for (k, v) in entries {
+                collect_asset_paths_expr(k, out);
+                collect_asset_paths_expr(v, out);
+            }
+        }
+        ClassLit { fields, .. } => {
+            for (_, e) in fields {
+                collect_asset_paths_expr(e, out);
+            }
+        }
+        Text(chunks, _) => {
+            for c in chunks {
+                if let ast::StrChunk::Expr(e) = c {
+                    collect_asset_paths_expr(e, out);
+                }
+            }
+        }
+        Function { decl, .. } => {
+            for p in &decl.params {
+                if let Some(d) = &p.default {
+                    collect_asset_paths_expr(d, out);
+                }
+            }
+            for s in &decl.body {
+                collect_asset_paths_stmt(s, out);
+            }
+        }
+        Wait { expr, .. } => collect_asset_paths_expr(expr, out),
+        Number(_, _) | Bool(_, _) | Nothing(_) | SelfRef(_) | Ident(_, _) => {}
+    }
 }
 
 fn cmd_new(name: Option<&String>) -> ExitCode {

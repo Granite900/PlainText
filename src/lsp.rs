@@ -566,13 +566,17 @@ fn builtin_hover(name: &str) -> Option<String> {
         "get_json" | "post_json" | "parse_json" | "to_json" => {
             "Web / JSON tools — needs `import web` (or use `web.get` / `web.get_json`)."
         }
-        "clear_screen" | "draw_circle" | "draw_rectangle" | "draw_line" | "draw_text" | "rgb"
-        | "rgba" | "screen_width" | "screen_height" | "key_down" | "key_pressed" | "mouse_x"
-        | "mouse_y" | "mouse_down" | "mouse_pressed" | "load_sprite" | "draw_sprite"
-        | "draw_sprite_scaled" | "draw_sprite_rotated" | "sprite_width" | "sprite_height"
-        | "load_sound" | "play_sound" | "stop_sound" | "set_sound_volume" | "set_sound_pitch"
-        | "set_sound_pan" | "load_music" | "play_music" | "stop_music" | "set_music_volume"
-        | "set_music_pitch" | "set_music_pan" | "fade_music" | "load_font" => {
+        "clear_screen" | "draw_circle" | "draw_rectangle" | "draw_line" | "draw_text"
+        | "draw_text_screen" | "draw_rectangle_screen" | "rgb" | "rgba" | "screen_width"
+        | "screen_height" | "key_down" | "key_pressed" | "mouse_x" | "mouse_y" | "mouse_down"
+        | "mouse_pressed" | "load_sprite" | "load_sprite_sheet" | "draw_sprite"
+        | "draw_sprite_scaled" | "draw_sprite_rotated" | "draw_frame" | "draw_frame_scaled"
+        | "sprite_width" | "sprite_height" | "frame_count" | "set_camera" | "center_camera"
+        | "camera_bounds" | "camera_x" | "camera_y" | "burst" | "load_sound" | "play_sound"
+        | "stop_sound"
+        | "set_sound_volume" | "set_sound_pitch" | "set_sound_pan" | "load_music" | "play_music"
+        | "stop_music" | "set_music_volume" | "set_music_pitch" | "set_music_pan" | "fade_music"
+        | "load_font" => {
             "Game / drawing helper — use inside a `game` block."
         }
         _ => {
@@ -599,8 +603,11 @@ const BUILTIN_NAMES: &[&str] = &[
     "write_file", "append_file", "file_exists", "read_csv", "load_dataset", "now", "clock", "after",
     "every", "clear_screen", "draw_circle", "draw_rectangle", "draw_line", "draw_text", "rgb",
     "rgba", "screen_width", "screen_height", "key_down", "key_pressed", "mouse_x", "mouse_y",
-    "mouse_down", "mouse_pressed", "load_sprite", "draw_sprite", "draw_sprite_scaled",
-    "draw_sprite_rotated", "sprite_width", "sprite_height", "load_sound", "play_sound",
+    "mouse_down", "mouse_pressed", "load_sprite", "load_sprite_sheet", "draw_sprite",
+    "draw_sprite_scaled", "draw_sprite_rotated", "draw_frame", "draw_frame_scaled",
+    "sprite_width", "sprite_height", "frame_count", "set_camera", "center_camera",
+    "camera_bounds", "camera_x", "camera_y", "burst", "draw_text_screen",
+    "draw_rectangle_screen", "load_sound", "play_sound",
     "stop_sound", "set_sound_volume", "set_sound_pitch", "set_sound_pan", "load_music",
     "play_music", "stop_music", "set_music_volume", "set_music_pitch", "set_music_pan",
     "fade_music", "load_font",

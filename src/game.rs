@@ -109,12 +109,22 @@ pub fn run(program: &Program, game: &GameDecl) -> Result<(), Diagnostic> {
         if let Some(h) = draw {
             interp.run_hook(&scope, h, vec![])?;
         }
+        // Particles live in world space and draw after the program's `on draw`.
+        let particle_cmds = {
+            let mut g = bridge.borrow_mut();
+            crate::gfx::tick_particles(&mut g.particles, dt as f32)
+        };
+        bridge.borrow_mut().draw.extend(particle_cmds);
 
         let mut d = rl.begin_drawing(&thread);
         // Default background if the program didn't clear the screen itself.
         d.clear_background(Color::new(245, 245, 245, 255));
+        let (cam_x, cam_y) = {
+            let b = bridge.borrow();
+            (b.camera_x, b.camera_y)
+        };
         for cmd in bridge.borrow().draw.iter() {
-            render_one(&mut d, cmd, &textures, &fonts);
+            render_one(&mut d, cmd, &textures, &fonts, cam_x, cam_y);
         }
     }
     Ok(())
@@ -682,7 +692,7 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
 
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(bg);
-        render_cmds(&mut d, &cmds, &textures, &fonts);
+        render_cmds(&mut d, &cmds, &textures, &fonts, 0.0, 0.0);
     }
     Ok(())
 }
@@ -782,6 +792,8 @@ fn render_cmds(
     cmds: &[DrawCmd],
     textures: &[Option<Texture2D>],
     fonts: &[Option<Font>],
+    cam_x: f32,
+    cam_y: f32,
 ) {
     let mut i = 0;
     while i < cmds.len() {
@@ -794,14 +806,14 @@ fn render_cmds(
                 }
                 d.draw_scissor_mode(*x, *y, *w, *h, |mut sd| {
                     for cmd in &cmds[i..end] {
-                        render_one(&mut sd, cmd, textures, fonts);
+                        render_one(&mut sd, cmd, textures, fonts, cam_x, cam_y);
                     }
                 });
                 i = end + if end < cmds.len() { 1 } else { 0 };
             }
             DrawCmd::ScissorEnd => i += 1,
             other => {
-                render_one(d, other, textures, fonts);
+                render_one(d, other, textures, fonts, cam_x, cam_y);
                 i += 1;
             }
         }
@@ -813,19 +825,37 @@ fn render_one(
     cmd: &DrawCmd,
     textures: &[Option<Texture2D>],
     fonts: &[Option<Font>],
+    cam_x: f32,
+    cam_y: f32,
 ) {
     match cmd {
         DrawCmd::Clear(c) => d.clear_background(to_rl(*c)),
         DrawCmd::Circle { x, y, r, color } => {
-            d.draw_circle_v(Vector2::new(*x, *y), *r, to_rl(*color));
+            d.draw_circle_v(Vector2::new(*x - cam_x, *y - cam_y), *r, to_rl(*color));
         }
         DrawCmd::Rect { x, y, w, h, color } => {
-            d.draw_rectangle_rec(Rectangle::new(*x, *y, *w, *h), to_rl(*color));
+            d.draw_rectangle_rec(Rectangle::new(*x - cam_x, *y - cam_y, *w, *h), to_rl(*color));
         }
         DrawCmd::Line { x1, y1, x2, y2, thick, color } => {
-            d.draw_line_ex(Vector2::new(*x1, *y1), Vector2::new(*x2, *y2), *thick, to_rl(*color));
+            d.draw_line_ex(
+                Vector2::new(*x1 - cam_x, *y1 - cam_y),
+                Vector2::new(*x2 - cam_x, *y2 - cam_y),
+                *thick,
+                to_rl(*color),
+            );
         }
         DrawCmd::Text { text, x, y, size, color, font } => {
+            let sx = *x - cam_x;
+            let sy = *y - cam_y;
+            if let Some(id) = font {
+                if let Some(Some(f)) = fonts.get(*id) {
+                    d.draw_text_ex(f, text, Vector2::new(sx, sy), *size as f32, 1.0, to_rl(*color));
+                    return;
+                }
+            }
+            d.draw_text(text, sx as i32, sy as i32, *size, to_rl(*color));
+        }
+        DrawCmd::ScreenText { text, x, y, size, color, font } => {
             if let Some(id) = font {
                 if let Some(Some(f)) = fonts.get(*id) {
                     d.draw_text_ex(f, text, Vector2::new(*x, *y), *size as f32, 1.0, to_rl(*color));
@@ -834,24 +864,59 @@ fn render_one(
             }
             d.draw_text(text, *x as i32, *y as i32, *size, to_rl(*color));
         }
+        DrawCmd::ScreenRect { x, y, w, h, color } => {
+            d.draw_rectangle_rec(Rectangle::new(*x, *y, *w, *h), to_rl(*color));
+        }
         DrawCmd::Sprite { id, x, y, scale, rotation } => {
+            let sx = *x - cam_x;
+            let sy = *y - cam_y;
             if let Some(Some(tex)) = textures.get(*id) {
                 if *rotation == 0.0 {
-                    d.draw_texture_ex(tex, Vector2::new(*x, *y), 0.0, *scale, Color::WHITE);
+                    d.draw_texture_ex(tex, Vector2::new(sx, sy), 0.0, *scale, Color::WHITE);
                 } else {
                     let w = tex.width() as f32;
                     let h = tex.height() as f32;
                     let src = Rectangle::new(0.0, 0.0, w, h);
-                    let dst = Rectangle::new(*x, *y, w * scale, h * scale);
+                    let dst = Rectangle::new(sx, sy, w * scale, h * scale);
                     let origin = Vector2::new(w * scale / 2.0, h * scale / 2.0);
                     d.draw_texture_pro(tex, src, dst, origin, *rotation, Color::WHITE);
                 }
             }
         }
         DrawCmd::SpriteRect { id, x, y, w, h } => {
+            let sx = *x - cam_x;
+            let sy = *y - cam_y;
             if let Some(Some(tex)) = textures.get(*id) {
                 let src = Rectangle::new(0.0, 0.0, tex.width() as f32, tex.height() as f32);
-                let dst = Rectangle::new(*x, *y, *w, *h);
+                let dst = Rectangle::new(sx, sy, *w, *h);
+                d.draw_texture_pro(tex, src, dst, Vector2::zero(), 0.0, Color::WHITE);
+            }
+        }
+        DrawCmd::SpriteFrame {
+            id,
+            frame,
+            cell_w,
+            cell_h,
+            x,
+            y,
+            scale,
+            flip_x,
+        } => {
+            let sx = *x - cam_x;
+            let sy = *y - cam_y;
+            if let Some(Some(tex)) = textures.get(*id) {
+                let Some((src_x, src_y, mut src_w, src_h)) =
+                    crate::gfx::sheet_frame_src(tex.width(), tex.height(), *cell_w, *cell_h, *frame)
+                else {
+                    return;
+                };
+                if *flip_x {
+                    src_w = -src_w;
+                }
+                let src = Rectangle::new(src_x, src_y, src_w, src_h);
+                let dw = (*cell_w as f32) * scale;
+                let dh = (*cell_h as f32) * scale;
+                let dst = Rectangle::new(sx, sy, dw, dh);
                 d.draw_texture_pro(tex, src, dst, Vector2::zero(), 0.0, Color::WHITE);
             }
         }

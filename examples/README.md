@@ -33,9 +33,11 @@ Paths like `examples/assets/...` and `examples/data/...` are relative to **where
 | [`form.pt`](form.pt) | Settings form — `text_field`, `checkbox`, `slider`, `image`, `bind:` |
 | [`scroll_list.pt`](scroll_list.pt) | `scroll`, `list`, `dropdown`, multiline `text_field`, Tab focus |
 | [`audio.pt`](audio.pt) | Sound effects, looping SFX, streamed music, volume / pitch / pan / fade |
+| [`camera_sheets.pt`](camera_sheets.pt) | `set_camera` / `center_camera`, `load_sprite_sheet` + `draw_frame`, HUD |
 
 Sprites and sounds are covered in [lesson 10](../docs/learn/10-games.md); `counter.pt` /
-`form.pt` load button images from [`assets/`](assets/); `audio.pt` uses small WAVs there too.
+`form.pt` load button images from [`assets/`](assets/); `audio.pt` / `camera_sheets.pt` use
+assets there too.
 
 ## Web & AI
 

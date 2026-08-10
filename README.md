@@ -31,7 +31,7 @@ backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 
 - **Reads like English.** `make function called`, `for every item in items`, `repeat 3 times`.
 - **Catches mistakes early.** A real type checker, but inference means you almost never write a type.
-- **Games built in.** `game { on update … on draw … }`, drawn natively. `import gamekit` adds gravity, solid bodies, hitboxes, and character-grid **tilemaps** — with a `plaintext edit_tilemap` painter to lay out levels visually. Sound effects and streamed music (volume / pitch / pan / fade) included.
+- **Games built in.** `game { on update … on draw … }`, drawn natively, with a scrolling **camera**, **sprite-sheet** animation, and particle bursts. `import gamekit` adds gravity, solid bodies, hitboxes, and character-grid **tilemaps** — with a `plaintext edit_tilemap` painter to lay out levels visually. Sound effects and streamed music (volume / pitch / pan / fade) included.
 - **Real desktop UIs.** `window { column { button … text_field … } }` with scroll areas, lists, dropdowns, checkboxes, sliders, and multiline text — bound straight to your variables.
 - **Batteries included.** Math, lists (map/filter/fold-style tools), dictionaries, text, files, time, timers, console input, and `save` / `load` for structured progress that survives restarts.
 - **Train a neural network.** `import ai`, then `neural_network(...)`, `.train(...)`, `.predict(...)` — even watch it learn live in a game window, or train on a GPU (`device: auto`, covering NVIDIA / AMD / Apple).
@@ -121,6 +121,7 @@ See **[`examples/README.md`](examples/README.md)** for the full index. Highlight
 | [`examples/form.pt`](examples/form.pt) | Desktop form UI |
 | [`examples/scroll_list.pt`](examples/scroll_list.pt) | Scroll, list, dropdown, multiline text |
 | [`examples/audio.pt`](examples/audio.pt) | Sounds, looping SFX, streamed music, fade |
+| [`examples/camera_sheets.pt`](examples/camera_sheets.pt) | Camera follow + sprite-sheet frames + HUD |
 | [`examples/save.pt`](examples/save.pt) | `save` / `load` progress across runs |
 | [`examples/fetch.pt`](examples/fetch.pt) | `import web` (offline JSON) |
 | [`examples/learn.pt`](examples/learn.pt) | `import ai` — train, GPU, save/load |
@@ -166,10 +167,26 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v2.9.1`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
+(`v2.10.0`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## What's new
+
+**2.10** — scrolling worlds and animation:
+
+- **Camera** — `set_camera(x, y)` / `center_camera(x, y)` scroll the world; every ordinary draw
+  subtracts the offset. `camera_bounds(0, 0, w, h)` keeps the view inside the level, and
+  `camera_x()` / `camera_y()` read it back.
+- **Sprite sheets** — `load_sprite_sheet(path, cell_width:, cell_height:)`, then
+  `draw_frame(sheet, frame, x, y)` (with `flip_x:` or `draw_frame_scaled`) and `frame_count`
+  for walk cycles and animations.
+- **HUD drawing** — `draw_text_screen` / `draw_rectangle_screen` stay fixed on screen,
+  unaffected by the camera.
+- **Particles** — `burst(x, y, color, count)` (optional `speed:` / `life:`) fires self-managing
+  sparks — no bookkeeping.
+- **Smarter `build`** — every literal `load_sprite` / `load_sprite_sheet` / `load_sound` /
+  `load_music` / `load_font` path is packed next to the app (keeping its relative path), so a
+  built game runs anywhere.
 
 **2.9.1** — faster variable lookup/assignment in tight loops (`FxHashMap` scopes; assign without
 re-allocating the key string).

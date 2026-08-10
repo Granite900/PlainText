@@ -41,6 +41,8 @@ Inside a game you can:
 - Draw shapes and text (`draw_circle`, `draw_rectangle`, `draw_text`, …)
 - Read keys and mouse (`key_down`, `key_pressed`, `mouse_x`, …)
 - Load and draw images (`load_sprite`, `draw_sprite`, …)
+- Scroll the world with a camera (`set_camera`, `center_camera`) and animate sheets
+  (`load_sprite_sheet`, `draw_frame`)
 - Schedule work with `after(seconds, fn)` and `every(seconds, fn)`
 
 Need random numbers? `import math` and use `random_between`.
@@ -63,6 +65,32 @@ game "Sprites" (width: 800, height: 600) {
 }
 ```
 
+### Sprite sheets
+
+One PNG with equal cells (left→right, then top→bottom):
+
+```plaintext
+sheet = load_sprite_sheet("assets/walk.png", cell_width: 32, cell_height: 32)
+draw_frame(sheet, frame, x, y)
+draw_frame(sheet, frame, x, y, flip_x: true)
+```
+
+Bump `frame` in `on update` for walk cycles. `frame_count(sheet)` is how many cells fit.
+
+### Camera
+
+Ordinary draws use **world** coordinates. Move the view with `set_camera(x, y)` or
+`center_camera(world_x, world_y)` each frame (for example after you move the player). Clamp the
+view to the level with `camera_bounds(0, 0, world_w, world_h)`. HUD that should stay put:
+
+```plaintext
+draw_text_screen("Score: {score}", 20, 20, 24, white)
+```
+
+Quick juice for jumps/hits: `burst(x, y, orange, 16)` (optional `speed:` / `life:`).
+
+Mouse is still screen-space; world pick = `mouse_x() + camera_x()`.
+
 Play a one-shot with `play_sound(beep)`, or loop a sound effect with
 `play_sound(hum, loop: true)` / `stop_sound(hum)`.
 
@@ -84,13 +112,14 @@ Sizes come from `sprite_width(ship)` / `sprite_height(ship)`.
 
 **Where do the files go?** Paths are relative to the folder you run `plaintext` **from**, not the
 `.pt` file's folder. Keep images in an `assets/` folder next to your program and run from there.
-PNG images, WAV/OGG audio, and TTF fonts are supported.
+PNG images, WAV/OGG/MP3 audio, and TTF fonts are supported.
 
 ## Practice — play these
 
 | Example | Idea |
 |---------|------|
 | [`timers.pt`](../../examples/timers.pt) | `after` / `every` |
+| [`camera_sheets.pt`](../../examples/camera_sheets.pt) | Camera follow + sprite-sheet walk cycle + HUD |
 | [`audio.pt`](../../examples/audio.pt) | Sounds, looping SFX, streamed music, volume / fade |
 | [`catch.pt`](../../examples/catch.pt) | Full arcade loop (score, lives, restart) |
 | [`platformer.pt`](../../examples/platformer.pt) | Gravity + hitboxes via `import gamekit` (lesson 12) |

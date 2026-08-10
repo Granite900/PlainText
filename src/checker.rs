@@ -1280,7 +1280,9 @@ impl Checker {
         let _ = span;
         match b {
             Print | Exit | WriteFile | AppendFile | ClearScreen | DrawCircle | DrawRectangle | DrawLine
-            | DrawText | DrawSprite | DrawSpriteScaled | DrawSpriteRotated | PlaySound | StopSound
+            | DrawText | DrawSprite | DrawSpriteScaled | DrawSpriteRotated | DrawFrame | DrawFrameScaled
+            | SetCamera | CenterCamera | CameraBounds | Burst | DrawTextScreen | DrawRectangleScreen
+            | PlaySound | StopSound
             | SetSoundVolume | SetSoundPitch | SetSoundPan | PlayMusic | StopMusic | SetMusicVolume
             | SetMusicPitch | SetMusicPan | FadeMusic | After | Every | Save => Ty::Nothing,
             ToText | ReadFile | Input => Ty::Text,
@@ -1290,9 +1292,8 @@ impl Checker {
             Rgb | Rgba => Ty::List(Box::new(Ty::Number)),
             ToNumber | Length | Min | Greatest | Abs | Sqrt | Floor | Ceil | Round | RandomBetween
             | Pow | Clamp | Sin | Cos | Tan | Now | Clock | ScreenWidth | ScreenHeight | MouseX
-            | MouseY | LoadSprite | SpriteWidth | SpriteHeight | LoadSound | LoadMusic | LoadFont => {
-                Ty::Number
-            }
+            | MouseY | LoadSprite | LoadSpriteSheet | SpriteWidth | SpriteHeight | FrameCount
+            | CameraX | CameraY | LoadSound | LoadMusic | LoadFont => Ty::Number,
             NeuralNetwork | LoadNetwork | BestOf => Ty::Network,
             Population | Evolve => Ty::List(Box::new(Ty::Network)),
             PhysicsWorld => Ty::PhysicsWorld,

@@ -445,7 +445,13 @@ impl Parser {
 
     fn parse_hook(&mut self) -> Result<Hook, Diagnostic> {
         let span = self.expect(TokenKind::On, "`on`")?.span;
-        let name = self.parse_ident("a hook name like `start`, `update`, or `draw`")?;
+        // `start` is a keyword elsewhere, but it's also the lifecycle hook name.
+        let name = if let Some(word) = keyword_word(self.peek()) {
+            self.advance();
+            word.to_string()
+        } else {
+            self.parse_ident("a hook name like `start`, `update`, or `draw`")?
+        };
         self.expect(TokenKind::LParen, "`(` after the hook name")?;
         let mut params = Vec::new();
         if !self.check(&TokenKind::RParen) {

@@ -148,9 +148,11 @@ plaintext run examples/tilemap.pt
 
 ## Out of scope (for now)
 
-No slopes, rotation, joints, tile animation, or sprite-sheet tile drawing — axis-aligned boxes
-and solid character tiles only. The `edit_tilemap` painter covers tile layout and per-character
-PNG assignment, but not `body`/`hitbox` placement. Color `draw_tilemap` is the debug/teachable
-path; image tilesets can come later.
+No slopes, rotation, joints, or **animated / tileset-drawn maps** — collision is still
+axis-aligned boxes and solid character tiles. Character sprite sheets (`load_sprite_sheet` /
+`draw_frame`) are already in [lesson 10](10-games.md); what’s missing here is drawing the
+*tilemap itself* from a sheet instead of `tile_colors`. The `edit_tilemap` painter covers tile
+layout and per-character PNG assignment, but not `body`/`hitbox` placement. Color
+`draw_tilemap` is the debug/teachable path; image tilesets can come later.
 
 **Previous:** [Desktop UI ←](11-ui.md) · **Next:** [Neural networks →](13-neural-networks.md)

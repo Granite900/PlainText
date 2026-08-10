@@ -31,7 +31,7 @@ About **70–100 minutes** if you try every exercise.
 | 5 | [Functions](learn/05-functions.md) | `make function called`, parameters, `return` |
 | 6 | [Classes](learn/06-classes.md) | `class`, fields, methods, `self` |
 | 7 | [Lists and dictionaries](learn/07-collections.md) | Collections and their methods |
-| 8 | [Math and the toolbox](learn/08-math-and-tools.md) | `import math`, `input`, `exit` |
+| 8 | [Math and the toolbox](learn/08-math-and-tools.md) | `import math`, `input`, `save` / `load`, `exit` |
 | 9 | [Modules](learn/09-modules.md) | Splitting a program across files |
 | 10 | [Games](learn/10-games.md) | `game`, update/draw, sprites, input, sound & music |
 | 11 | [Desktop UI](learn/11-ui.md) | `window`, buttons, forms, scroll / list / dropdown |

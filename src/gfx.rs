@@ -44,6 +44,39 @@ pub enum DrawCmd {
     Sprite { id: usize, x: f32, y: f32, scale: f32, rotation: f32 },
     /// Draw a sprite stretched to a destination rectangle (used by UI buttons).
     SpriteRect { id: usize, x: f32, y: f32, w: f32, h: f32 },
+    /// Clip following draws to this screen rectangle until [`DrawCmd::ScissorEnd`].
+    ScissorBegin { x: i32, y: i32, w: i32, h: i32 },
+    ScissorEnd,
+}
+
+/// Queued sound-effect commands (ids from [`GfxBridge::queue_sound`]).
+#[derive(Clone, Debug)]
+pub enum SoundCmd {
+    Play { id: usize, looping: bool },
+    Stop(usize),
+    SetVolume { id: usize, volume: f32 },
+    SetPitch { id: usize, pitch: f32 },
+    SetPan { id: usize, pan: f32 },
+}
+
+/// Queued streamed-music commands (ids from [`GfxBridge::queue_music`]).
+#[derive(Clone, Debug)]
+pub enum MusicCmd {
+    Play(usize),
+    Stop(usize),
+    SetVolume { id: usize, volume: f32 },
+    SetPitch { id: usize, pitch: f32 },
+    SetPan { id: usize, pan: f32 },
+    Fade { id: usize, target: f32, seconds: f32 },
+}
+
+/// Linear volume fade: returns `(volume, finished)`.
+pub fn fade_volume(start: f32, target: f32, elapsed: f32, duration: f32) -> (f32, bool) {
+    if !(duration > 0.0) {
+        return (target, true);
+    }
+    let t = (elapsed / duration).clamp(0.0, 1.0);
+    (start + (target - start) * t, t >= 1.0)
 }
 
 /// Shared mutable state between the interpreter and the frame loop.
@@ -63,10 +96,13 @@ pub struct GfxBridge {
     // runner (which owns the Raylib context) fulfills them and reports sizes.
     next_sprite_id: usize,
     next_sound_id: usize,
+    next_music_id: usize,
     pub sprite_loads: Vec<(usize, String)>,
     pub sprite_sizes: HashMap<usize, (i32, i32)>,
     pub sound_loads: Vec<(usize, String)>,
-    pub sound_plays: Vec<usize>,
+    pub sound_cmds: Vec<SoundCmd>,
+    pub music_loads: Vec<(usize, String)>,
+    pub music_cmds: Vec<MusicCmd>,
     next_font_id: usize,
     pub font_loads: Vec<(usize, String)>,
 }
@@ -85,10 +121,13 @@ impl GfxBridge {
             mouse_pressed: false,
             next_sprite_id: 0,
             next_sound_id: 0,
+            next_music_id: 0,
             sprite_loads: Vec::new(),
             sprite_sizes: HashMap::new(),
             sound_loads: Vec::new(),
-            sound_plays: Vec::new(),
+            sound_cmds: Vec::new(),
+            music_loads: Vec::new(),
+            music_cmds: Vec::new(),
             next_font_id: 0,
             font_loads: Vec::new(),
         }
@@ -110,11 +149,45 @@ impl GfxBridge {
         id
     }
 
+    /// Reserve a music id and queue its file for streamed loading.
+    pub fn queue_music(&mut self, path: String) -> usize {
+        let id = self.next_music_id;
+        self.next_music_id += 1;
+        self.music_loads.push((id, path));
+        id
+    }
+
     /// Reserve a font id and queue its file for loading.
     pub fn queue_font(&mut self, path: String) -> usize {
         let id = self.next_font_id;
         self.next_font_id += 1;
         self.font_loads.push((id, path));
         id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fade_volume;
+
+    #[test]
+    fn fade_reaches_target() {
+        let (v, done) = fade_volume(0.0, 1.0, 1.0, 1.0);
+        assert!((v - 1.0).abs() < 1e-5);
+        assert!(done);
+    }
+
+    #[test]
+    fn fade_midpoint() {
+        let (v, done) = fade_volume(0.2, 0.8, 0.5, 1.0);
+        assert!((v - 0.5).abs() < 1e-5);
+        assert!(!done);
+    }
+
+    #[test]
+    fn fade_zero_duration_snaps() {
+        let (v, done) = fade_volume(0.9, 0.1, 0.0, 0.0);
+        assert!((v - 0.1).abs() < 1e-5);
+        assert!(done);
     }
 }

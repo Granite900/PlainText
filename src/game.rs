@@ -6,17 +6,29 @@
 //! onto the window.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
-use raylib::core::audio::{RaylibAudio, Sound};
+use raylib::core::audio::{Music, RaylibAudio, Sound};
+use raylib::core::drawing::{RaylibDraw, RaylibScissorModeExt};
 use raylib::prelude::*;
 
 use crate::ast::{Expr, GameDecl, Program, WindowDecl};
 use crate::diagnostics::Diagnostic;
-use crate::gfx::{Color as PtColor, DrawCmd, GfxBridge};
+use crate::gfx::{
+    fade_volume, Color as PtColor, DrawCmd, GfxBridge, MusicCmd, SoundCmd,
+};
 use crate::interpreter::Interpreter;
 use crate::ui;
 use crate::value::Value;
+
+struct MusicFade {
+    id: usize,
+    start: f32,
+    target: f32,
+    elapsed: f32,
+    duration: f32,
+}
 
 pub fn run(program: &Program, game: &GameDecl) -> Result<(), Diagnostic> {
     let width = prop_number(&game.props, "width").unwrap_or(800.0) as i32;
@@ -44,14 +56,22 @@ pub fn run(program: &Program, game: &GameDecl) -> Result<(), Diagnostic> {
         .map(|a| &*Box::leak(Box::new(a)));
     let mut textures: Vec<Option<Texture2D>> = Vec::new();
     let mut sounds: Vec<Option<Sound<'static>>> = Vec::new();
+    let mut music: Vec<Option<Music<'static>>> = Vec::new();
     let mut fonts: Vec<Option<Font>> = Vec::new();
+    let mut looping_sounds: HashMap<usize, bool> = HashMap::new();
+    let mut music_volumes: HashMap<usize, f32> = HashMap::new();
+    let mut music_fades: Vec<MusicFade> = Vec::new();
 
     // Load anything queued during init before the first hook runs.
-    load_pending(&mut rl, &thread, audio, &bridge, &mut textures, &mut sounds, &mut fonts);
+    load_pending(
+        &mut rl, &thread, audio, &bridge, &mut textures, &mut sounds, &mut music, &mut fonts,
+    );
 
     if let Some(h) = start {
         interp.run_hook(&scope, h, vec![])?;
-        load_pending(&mut rl, &thread, audio, &bridge, &mut textures, &mut sounds, &mut fonts);
+        load_pending(
+            &mut rl, &thread, audio, &bridge, &mut textures, &mut sounds, &mut music, &mut fonts,
+        );
     }
 
     while !rl.window_should_close() {
@@ -64,13 +84,26 @@ pub fn run(program: &Program, game: &GameDecl) -> Result<(), Diagnostic> {
         // Fire any due `after`/`every` timers.
         interp.tick_timers(dt)?;
 
-        // Fulfill any newly requested assets, then play queued sounds.
-        load_pending(&mut rl, &thread, audio, &bridge, &mut textures, &mut sounds, &mut fonts);
-        for id in bridge.borrow_mut().sound_plays.drain(..) {
-            if let Some(Some(s)) = sounds.get(id) {
-                s.play();
-            }
-        }
+        // Fulfill any newly requested assets, then apply audio commands.
+        load_pending(
+            &mut rl, &thread, audio, &bridge, &mut textures, &mut sounds, &mut music, &mut fonts,
+        );
+        drain_audio(
+            &bridge,
+            &sounds,
+            &mut music,
+            &mut looping_sounds,
+            &mut music_volumes,
+            &mut music_fades,
+        );
+        tick_audio(
+            dt as f32,
+            &sounds,
+            &mut music,
+            &looping_sounds,
+            &mut music_volumes,
+            &mut music_fades,
+        );
 
         bridge.borrow_mut().draw.clear();
         if let Some(h) = draw {
@@ -81,14 +114,14 @@ pub fn run(program: &Program, game: &GameDecl) -> Result<(), Diagnostic> {
         // Default background if the program didn't clear the screen itself.
         d.clear_background(Color::new(245, 245, 245, 255));
         for cmd in bridge.borrow().draw.iter() {
-            render(&mut d, cmd, &textures, &fonts);
+            render_one(&mut d, cmd, &textures, &fonts);
         }
     }
     Ok(())
 }
 
-/// Fulfill queued sprite/sound/font load requests, recording sprite sizes back
-/// into the bridge so `sprite_width`/`sprite_height` work.
+/// Fulfill queued sprite/sound/music/font load requests, recording sprite sizes
+/// back into the bridge so `sprite_width`/`sprite_height` work.
 fn load_pending(
     rl: &mut RaylibHandle,
     thread: &RaylibThread,
@@ -96,6 +129,7 @@ fn load_pending(
     bridge: &Rc<RefCell<GfxBridge>>,
     textures: &mut Vec<Option<Texture2D>>,
     sounds: &mut Vec<Option<Sound<'static>>>,
+    music: &mut Vec<Option<Music<'static>>>,
     fonts: &mut Vec<Option<Font>>,
 ) {
     let sprite_reqs: Vec<(usize, String)> = bridge.borrow_mut().sprite_loads.drain(..).collect();
@@ -113,10 +147,161 @@ fn load_pending(
         grow_into(sounds, id, snd);
     }
 
+    let music_reqs: Vec<(usize, String)> = bridge.borrow_mut().music_loads.drain(..).collect();
+    for (id, path) in music_reqs {
+        let mut track = audio.and_then(|a| a.new_music(&path).ok());
+        if let Some(m) = track.as_mut() {
+            m.looping = true; // background music loops by default
+        }
+        grow_into(music, id, track);
+    }
+
     let font_reqs: Vec<(usize, String)> = bridge.borrow_mut().font_loads.drain(..).collect();
     for (id, path) in font_reqs {
         let font = rl.load_font(thread, &path).ok();
         grow_into(fonts, id, font);
+    }
+}
+
+fn drain_audio(
+    bridge: &Rc<RefCell<GfxBridge>>,
+    sounds: &[Option<Sound<'static>>],
+    music: &mut [Option<Music<'static>>],
+    looping_sounds: &mut HashMap<usize, bool>,
+    music_volumes: &mut HashMap<usize, f32>,
+    music_fades: &mut Vec<MusicFade>,
+) {
+    let sound_cmds: Vec<SoundCmd> = bridge.borrow_mut().sound_cmds.drain(..).collect();
+    for cmd in sound_cmds {
+        match cmd {
+            SoundCmd::Play { id, looping } => {
+                looping_sounds.insert(id, looping);
+                if let Some(Some(s)) = sounds.get(id) {
+                    s.play();
+                }
+            }
+            SoundCmd::Stop(id) => {
+                looping_sounds.remove(&id);
+                if let Some(Some(s)) = sounds.get(id) {
+                    s.stop();
+                }
+            }
+            SoundCmd::SetVolume { id, volume } => {
+                if let Some(Some(s)) = sounds.get(id) {
+                    s.set_volume(volume);
+                }
+            }
+            SoundCmd::SetPitch { id, pitch } => {
+                if let Some(Some(s)) = sounds.get(id) {
+                    s.set_pitch(pitch);
+                }
+            }
+            SoundCmd::SetPan { id, pan } => {
+                if let Some(Some(s)) = sounds.get(id) {
+                    s.set_pan(pan);
+                }
+            }
+        }
+    }
+
+    let music_cmds: Vec<MusicCmd> = bridge.borrow_mut().music_cmds.drain(..).collect();
+    for cmd in music_cmds {
+        match cmd {
+            MusicCmd::Play(id) => {
+                if let Some(Some(m)) = music.get_mut(id) {
+                    m.looping = true;
+                    m.play_stream();
+                }
+            }
+            MusicCmd::Stop(id) => {
+                music_fades.retain(|f| f.id != id);
+                if let Some(Some(m)) = music.get_mut(id) {
+                    m.stop_stream();
+                }
+            }
+            MusicCmd::SetVolume { id, volume } => {
+                music_fades.retain(|f| f.id != id);
+                music_volumes.insert(id, volume);
+                if let Some(Some(m)) = music.get(id) {
+                    m.set_volume(volume);
+                }
+            }
+            MusicCmd::SetPitch { id, pitch } => {
+                if let Some(Some(m)) = music.get(id) {
+                    m.set_pitch(pitch);
+                }
+            }
+            MusicCmd::SetPan { id, pan } => {
+                if let Some(Some(m)) = music.get(id) {
+                    m.set_pan(pan);
+                }
+            }
+            MusicCmd::Fade { id, target, seconds } => {
+                let start = music_volumes.get(&id).copied().unwrap_or(1.0);
+                music_fades.retain(|f| f.id != id);
+                if seconds <= 0.0 {
+                    music_volumes.insert(id, target);
+                    if let Some(Some(m)) = music.get(id) {
+                        m.set_volume(target);
+                    }
+                } else {
+                    music_fades.push(MusicFade {
+                        id,
+                        start,
+                        target,
+                        elapsed: 0.0,
+                        duration: seconds,
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn tick_audio(
+    dt: f32,
+    sounds: &[Option<Sound<'static>>],
+    music: &mut [Option<Music<'static>>],
+    looping_sounds: &HashMap<usize, bool>,
+    music_volumes: &mut HashMap<usize, f32>,
+    music_fades: &mut Vec<MusicFade>,
+) {
+    // Restart finished looping sound effects.
+    for (&id, &looping) in looping_sounds.iter() {
+        if !looping {
+            continue;
+        }
+        if let Some(Some(s)) = sounds.get(id) {
+            if !s.is_playing() {
+                s.play();
+            }
+        }
+    }
+
+    // Keep streamed music buffers filled.
+    for slot in music.iter_mut() {
+        if let Some(m) = slot.as_mut() {
+            if m.is_stream_playing() {
+                m.update_stream();
+            }
+        }
+    }
+
+    // Advance volume fades.
+    let mut i = 0;
+    while i < music_fades.len() {
+        let fade = &mut music_fades[i];
+        fade.elapsed += dt;
+        let (vol, done) = fade_volume(fade.start, fade.target, fade.elapsed, fade.duration);
+        music_volumes.insert(fade.id, vol);
+        if let Some(Some(m)) = music.get(fade.id) {
+            m.set_volume(vol);
+        }
+        if done {
+            music_fades.remove(i);
+        } else {
+            i += 1;
+        }
     }
 }
 
@@ -154,100 +339,236 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
     let mut textures: Vec<Option<Texture2D>> = Vec::new();
     let mut fonts: Vec<Option<Font>> = Vec::new();
     // Assets queued during top-level setup (load_sprite / load_font).
-    load_pending(&mut rl, &thread, None, &bridge, &mut textures, &mut Vec::new(), &mut fonts);
+    load_pending(
+        &mut rl,
+        &thread,
+        None,
+        &bridge,
+        &mut textures,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut fonts,
+    );
 
-    // UI state that lives across frames but not in the program: which text field
-    // has keyboard focus, and which slider (if any) is being dragged. These are
-    // indices into the per-frame `controls` list, which is stable as long as the
-    // widget tree keeps the same shape.
+    // UI state that lives across frames but not in the program. Indices into
+    // the per-frame `controls` list stay stable while the widget tree shape does.
     let mut focused: Option<usize> = None;
     let mut dragging: Option<usize> = None;
-    // Caret position (a character index) within the focused text field.
     let mut caret: usize = 0;
+    let mut scrolls: HashMap<usize, f32> = HashMap::new();
+    let mut open_dropdown: Option<usize> = None;
 
     while !rl.window_should_close() {
         sync_input(&mut bridge.borrow_mut(), &rl);
-        load_pending(&mut rl, &thread, None, &bridge, &mut textures, &mut Vec::new(), &mut fonts);
+        load_pending(
+            &mut rl,
+            &thread,
+            None,
+            &bridge,
+            &mut textures,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut fonts,
+        );
 
-        // Text typed this frame (must be drained even when nothing is focused,
-        // so it doesn't pile up in Raylib's queue).
         let mut typed = String::new();
         while let Some(ch) = rl.get_char_pressed() {
             typed.push(ch);
         }
-        // Editing keys for the focused field. Movement/delete keys auto-repeat
-        // when held; Ctrl+V pastes.
         let ctrl = rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL)
             || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL);
+        let shift = rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT)
+            || rl.is_key_down(KeyboardKey::KEY_RIGHT_SHIFT);
         let edit = TextEdit {
             backspace: key_repeat(&rl, KeyboardKey::KEY_BACKSPACE),
             delete: key_repeat(&rl, KeyboardKey::KEY_DELETE),
             left: key_repeat(&rl, KeyboardKey::KEY_LEFT),
             right: key_repeat(&rl, KeyboardKey::KEY_RIGHT),
+            up: key_repeat(&rl, KeyboardKey::KEY_UP),
+            down: key_repeat(&rl, KeyboardKey::KEY_DOWN),
             home: rl.is_key_pressed(KeyboardKey::KEY_HOME),
             end: rl.is_key_pressed(KeyboardKey::KEY_END),
+            enter: rl.is_key_pressed(KeyboardKey::KEY_ENTER)
+                || rl.is_key_pressed(KeyboardKey::KEY_KP_ENTER),
             paste: ctrl && rl.is_key_pressed(KeyboardKey::KEY_V),
             clipboard: rl.get_clipboard_text().unwrap_or_default(),
         };
-        // A Ctrl chord isn't text — don't also insert the raw letter.
         if ctrl {
             typed.clear();
         }
+
+        let wheel = rl.get_mouse_wheel_move();
+        let tab = rl.is_key_pressed(KeyboardKey::KEY_TAB);
 
         let (mouse, pressed, down) = {
             let b = bridge.borrow();
             ((b.mouse_x, b.mouse_y), b.mouse_pressed, b.mouse_down)
         };
 
-        // Rebuild the widget tree from current state, lay it out, collect draw
-        // commands and interactive controls.
         let mut nodes = interp.build_widgets(&window.root, &scope)?;
         ui::layout_root(&mut nodes, width, height);
         let mut cmds = Vec::new();
         let mut controls = Vec::new();
-        ui::collect(&nodes, mouse, focused, caret, &mut cmds, &mut controls);
+        let draw_state = ui::UiDrawState {
+            focused,
+            caret,
+            scrolls: &scrolls,
+            open_dropdown,
+        };
+        ui::collect_frame(&mut nodes, mouse, &draw_state, &mut cmds, &mut controls);
 
         if !down {
             dragging = None;
         }
 
-        // A press dispatches to the topmost control under the cursor and (re)sets
-        // keyboard focus. Any change is written back to the program, so it shows
-        // on the next frame's rebuild.
+        if wheel != 0.0 {
+            if let Some(i) = controls
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, c)| {
+                    point_in(mouse, c)
+                        && matches!(
+                            c.kind,
+                            ui::ControlKind::Scroll | ui::ControlKind::List | ui::ControlKind::Dropdown
+                        )
+                })
+                .map(|(i, _)| i)
+            {
+                let c = &controls[i];
+                let view_h = match c.kind {
+                    ui::ControlKind::Dropdown if c.checked => (c.h - 34.0).max(1.0),
+                    _ => c.h,
+                };
+                let cur = scrolls.get(&i).copied().unwrap_or(0.0);
+                let next = ui::clamp_scroll(cur - wheel * 24.0, c.content_h, view_h);
+                scrolls.insert(i, next);
+            }
+        }
+
+        if tab {
+            let focusable: Vec<usize> = controls
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| {
+                    matches!(
+                        c.kind,
+                        ui::ControlKind::TextField
+                            | ui::ControlKind::List
+                            | ui::ControlKind::Dropdown
+                            | ui::ControlKind::Checkbox
+                            | ui::ControlKind::Slider
+                    )
+                })
+                .map(|(i, _)| i)
+                .collect();
+            if !focusable.is_empty() {
+                let pos = focused.and_then(|f| focusable.iter().position(|&i| i == f));
+                let next = if shift {
+                    match pos {
+                        Some(0) | None => *focusable.last().unwrap(),
+                        Some(p) => focusable[p - 1],
+                    }
+                } else {
+                    match pos {
+                        Some(p) if p + 1 < focusable.len() => focusable[p + 1],
+                        _ => focusable[0],
+                    }
+                };
+                focused = Some(next);
+                caret = controls.get(next).map(|c| c.text.chars().count()).unwrap_or(0);
+                if controls[next].kind != ui::ControlKind::Dropdown {
+                    open_dropdown = None;
+                }
+            }
+        }
+
         if pressed {
-            focused = None;
             let hit = controls
                 .iter()
                 .enumerate()
                 .rev()
                 .find(|(_, c)| point_in(mouse, c))
                 .map(|(i, _)| i);
+
+            if let Some(open_i) = open_dropdown {
+                if hit != Some(open_i) {
+                    open_dropdown = None;
+                }
+            }
+
+            focused = None;
             if let Some(i) = hit {
                 match controls[i].kind {
                     ui::ControlKind::Button => {
+                        open_dropdown = None;
                         if let Some(cb) = controls[i].callback.clone() {
                             interp.call_callback(&cb)?;
                         }
                     }
                     ui::ControlKind::TextField => {
+                        open_dropdown = None;
                         focused = Some(i);
-                        caret = caret_from_x(&controls[i], mouse.0);
+                        caret = if controls[i].multiline {
+                            caret_from_xy(
+                                &controls[i],
+                                mouse,
+                                scrolls.get(&i).copied().unwrap_or(0.0),
+                            )
+                        } else {
+                            caret_from_x(&controls[i], mouse.0)
+                        };
                     }
                     ui::ControlKind::Checkbox => {
+                        open_dropdown = None;
+                        focused = Some(i);
                         let new_val = !controls[i].checked;
                         write_back(&mut interp, &scope, &controls[i], Value::Bool(new_val))?;
                     }
                     ui::ControlKind::Slider => {
+                        open_dropdown = None;
+                        focused = Some(i);
                         dragging = Some(i);
                         if let Some(v) = slider_value(&controls[i], mouse.0) {
                             write_back(&mut interp, &scope, &controls[i], Value::Number(v))?;
+                        }
+                    }
+                    ui::ControlKind::Scroll => {
+                        open_dropdown = None;
+                    }
+                    ui::ControlKind::List => {
+                        open_dropdown = None;
+                        focused = Some(i);
+                        let scroll = scrolls.get(&i).copied().unwrap_or(0.0);
+                        if let Some(row) = ui::list_row_at(&controls[i], mouse.1, scroll, 0.0) {
+                            write_back(&mut interp, &scope, &controls[i], Value::Number(row as f64))?;
+                        }
+                    }
+                    ui::ControlKind::Dropdown => {
+                        focused = Some(i);
+                        let was_open = open_dropdown == Some(i);
+                        if was_open {
+                            let scroll = scrolls.get(&i).copied().unwrap_or(0.0);
+                            let header_h = 34.0;
+                            if let Some(row) = ui::list_row_at(&controls[i], mouse.1, scroll, header_h) {
+                                write_back(
+                                    &mut interp,
+                                    &scope,
+                                    &controls[i],
+                                    Value::Number(row as f64),
+                                )?;
+                                open_dropdown = None;
+                            } else if mouse.1 <= controls[i].y + header_h {
+                                open_dropdown = None;
+                            }
+                        } else {
+                            open_dropdown = Some(i);
                         }
                     }
                 }
             }
         }
 
-        // Continue a slider drag while the mouse is held.
         if down {
             if let Some(i) = dragging {
                 if let Some(c) = controls.get(i) {
@@ -262,20 +583,27 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
             }
         }
 
-        // Edit the focused field: caret movement, insert/delete at the caret,
-        // and paste. Only a real content change is written back.
         if let Some(i) = focused {
-            if let Some(c) = controls.get(i) {
+            if let Some(c) = controls.get(i).cloned() {
                 if c.kind == ui::ControlKind::TextField {
                     let mut chars: Vec<char> = c.text.chars().collect();
                     let mut pos = caret.min(chars.len());
                     let mut changed = false;
+                    let max_w = c.w - 16.0;
 
                     if edit.left {
                         pos = pos.saturating_sub(1);
                     }
                     if edit.right {
                         pos = (pos + 1).min(chars.len());
+                    }
+                    if c.multiline && edit.up {
+                        let s: String = chars.iter().collect();
+                        pos = ui::move_caret_vertical(&s, pos, max_w, c.font_size, true);
+                    }
+                    if c.multiline && edit.down {
+                        let s: String = chars.iter().collect();
+                        pos = ui::move_caret_vertical(&s, pos, max_w, c.font_size, false);
                     }
                     if edit.home {
                         pos = 0;
@@ -292,23 +620,59 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
                         chars.remove(pos);
                         changed = true;
                     }
+                    if c.multiline && edit.enter {
+                        chars.insert(pos, '\n');
+                        pos += 1;
+                        changed = true;
+                    }
                     if edit.paste {
-                        for ch in edit.clipboard.chars().filter(|c| !c.is_control()) {
+                        for ch in edit.clipboard.chars() {
+                            if ch == '\n' || ch == '\r' {
+                                if c.multiline && ch == '\n' {
+                                    chars.insert(pos, '\n');
+                                    pos += 1;
+                                    changed = true;
+                                }
+                                continue;
+                            }
+                            if ch.is_control() {
+                                continue;
+                            }
                             chars.insert(pos, ch);
                             pos += 1;
                             changed = true;
                         }
                     }
                     for ch in typed.chars() {
+                        if ch == '\n' || ch == '\r' {
+                            continue;
+                        }
                         chars.insert(pos, ch);
                         pos += 1;
                         changed = true;
                     }
 
                     caret = pos;
+                    if c.multiline {
+                        let s: String = chars.iter().collect();
+                        let line_h = c.font_size as f32 + 4.0;
+                        let (li, _) = ui::caret_line_col(&s, caret, max_w, c.font_size);
+                        let cur = scrolls.get(&i).copied().unwrap_or(0.0);
+                        let caret_y = li as f32 * line_h;
+                        let view = (c.h - 8.0).max(line_h);
+                        let mut next = cur;
+                        if caret_y < cur {
+                            next = caret_y;
+                        } else if caret_y + line_h > cur + view {
+                            next = caret_y + line_h - view;
+                        }
+                        let content_h =
+                            ui::wrap_lines_with_breaks(&s, max_w, c.font_size).len() as f32 * line_h;
+                        scrolls.insert(i, ui::clamp_scroll(next, content_h, view));
+                    }
                     if changed {
                         let s: String = chars.iter().collect();
-                        write_back(&mut interp, &scope, c, Value::text(s))?;
+                        write_back(&mut interp, &scope, &c, Value::text(s))?;
                     }
                 }
             } else {
@@ -318,9 +682,7 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
 
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(bg);
-        for cmd in &cmds {
-            render(&mut d, cmd, &textures, &fonts);
-        }
+        render_cmds(&mut d, &cmds, &textures, &fonts);
     }
     Ok(())
 }
@@ -348,8 +710,11 @@ struct TextEdit {
     delete: bool,
     left: bool,
     right: bool,
+    up: bool,
+    down: bool,
     home: bool,
     end: bool,
+    enter: bool,
     paste: bool,
     clipboard: String,
 }
@@ -366,6 +731,26 @@ fn caret_from_x(c: &ui::Control, click_x: f32) -> usize {
     let em = (c.font_size as f32 * 0.5).max(1.0);
     let rel = (click_x - (c.x + 8.0)).max(0.0);
     ((rel / em).round() as usize).min(c.text.chars().count())
+}
+
+/// Map a click to a caret index in a multiline field.
+fn caret_from_xy(c: &ui::Control, mouse: (f32, f32), scroll: f32) -> usize {
+    let line_h = c.font_size as f32 + 4.0;
+    let max_w = c.w - 16.0;
+    let lines = ui::wrap_lines_with_breaks(&c.text, max_w, c.font_size);
+    let rel_y = (mouse.1 - (c.y + 6.0) + scroll).max(0.0);
+    let li = ((rel_y / line_h).floor() as usize).min(lines.len().saturating_sub(1));
+    let em = (c.font_size as f32 * 0.5).max(1.0);
+    let rel_x = (mouse.0 - (c.x + 8.0)).max(0.0);
+    let col = ((rel_x / em).round() as usize).min(lines[li].0.chars().count());
+    let mut at = 0usize;
+    for (i, (_, consumed)) in lines.iter().enumerate() {
+        if i == li {
+            return at + col;
+        }
+        at += consumed;
+    }
+    c.text.chars().count()
 }
 
 /// Map a mouse x-position to a slider's value, snapped to its step and clamped
@@ -392,8 +777,39 @@ fn point_in(p: (f32, f32), c: &ui::Control) -> bool {
     p.0 >= c.x && p.0 <= c.x + c.w && p.1 >= c.y && p.1 <= c.y + c.h
 }
 
-fn render(
+fn render_cmds(
     d: &mut RaylibDrawHandle,
+    cmds: &[DrawCmd],
+    textures: &[Option<Texture2D>],
+    fonts: &[Option<Font>],
+) {
+    let mut i = 0;
+    while i < cmds.len() {
+        match &cmds[i] {
+            DrawCmd::ScissorBegin { x, y, w, h } => {
+                i += 1;
+                let mut end = i;
+                while end < cmds.len() && !matches!(cmds[end], DrawCmd::ScissorEnd) {
+                    end += 1;
+                }
+                d.draw_scissor_mode(*x, *y, *w, *h, |mut sd| {
+                    for cmd in &cmds[i..end] {
+                        render_one(&mut sd, cmd, textures, fonts);
+                    }
+                });
+                i = end + if end < cmds.len() { 1 } else { 0 };
+            }
+            DrawCmd::ScissorEnd => i += 1,
+            other => {
+                render_one(d, other, textures, fonts);
+                i += 1;
+            }
+        }
+    }
+}
+
+fn render_one(
+    d: &mut impl RaylibDraw,
     cmd: &DrawCmd,
     textures: &[Option<Texture2D>],
     fonts: &[Option<Font>],
@@ -423,7 +839,6 @@ fn render(
                 if *rotation == 0.0 {
                     d.draw_texture_ex(tex, Vector2::new(*x, *y), 0.0, *scale, Color::WHITE);
                 } else {
-                    // Rotate about the sprite's center.
                     let w = tex.width() as f32;
                     let h = tex.height() as f32;
                     let src = Rectangle::new(0.0, 0.0, w, h);
@@ -440,6 +855,7 @@ fn render(
                 d.draw_texture_pro(tex, src, dst, Vector2::zero(), 0.0, Color::WHITE);
             }
         }
+        DrawCmd::ScissorBegin { .. } | DrawCmd::ScissorEnd => {}
     }
 }
 
@@ -530,6 +946,10 @@ mod tests {
             step,
             text: String::new(),
             font_size: 20,
+            items: Vec::new(),
+            multiline: false,
+            content_h: 0.0,
+            row_h: 0.0,
         }
     }
 

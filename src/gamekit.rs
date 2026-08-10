@@ -1,4 +1,4 @@
-//! A small 2D game kit: gravity, solid bodies, and tagged hitboxes.
+//! A small 2D game kit: gravity, solid bodies, tagged hitboxes, and tilemaps.
 //!
 //! Designed to be readable from PlainText (`import gamekit`). Physics is
 //! axis-aligned boxes only — no slopes, rotation, or joints. Units are pixels
@@ -7,6 +7,108 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
+
+/// A grid of single-character tiles, authored as text rows in PlainText.
+#[derive(Clone)]
+pub struct Tilemap {
+    pub cell_size: f64,
+    /// Each string is one row of tile characters (top row first).
+    pub rows: Vec<String>,
+    /// Characters that block solid bodies (set when the map is added to a world).
+    pub solid: HashSet<char>,
+}
+
+impl Tilemap {
+    pub fn new(cell_size: f64, rows: Vec<String>) -> Tilemap {
+        Tilemap {
+            cell_size: cell_size.max(1.0),
+            rows,
+            solid: HashSet::new(),
+        }
+    }
+
+    pub fn set_solid_tiles(&mut self, chars: impl IntoIterator<Item = char>) {
+        self.solid = chars.into_iter().collect();
+    }
+
+    /// Width in tiles (longest row).
+    pub fn width(&self) -> usize {
+        self.rows.iter().map(|r| r.chars().count()).max().unwrap_or(0)
+    }
+
+    /// Height in tiles.
+    pub fn height(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Tile character at column `x`, row `y` (0-based, top-left origin), or `None` if out of range.
+    pub fn tile_at(&self, x: i64, y: i64) -> Option<char> {
+        if x < 0 || y < 0 {
+            return None;
+        }
+        let row = self.rows.get(y as usize)?;
+        row.chars().nth(x as usize)
+    }
+
+    pub fn is_solid_at(&self, x: i64, y: i64) -> bool {
+        match self.tile_at(x, y) {
+            Some(ch) => self.solid.contains(&ch),
+            None => false,
+        }
+    }
+
+    /// World-space rectangle of the tile at (`tx`, `ty`).
+    pub fn tile_rect(&self, tx: i64, ty: i64) -> (f64, f64, f64, f64) {
+        (
+            tx as f64 * self.cell_size,
+            ty as f64 * self.cell_size,
+            self.cell_size,
+            self.cell_size,
+        )
+    }
+}
+
+/// Push a moving AABB out of a solid AABB along one axis (same rules as body–body).
+/// Returns whether the mover is resting on top of the solid after a vertical resolve.
+pub fn resolve_aabb_vs_solid(
+    mover: &mut Body,
+    solid_x: f64,
+    solid_y: f64,
+    solid_w: f64,
+    solid_h: f64,
+    horizontal: bool,
+) -> bool {
+    if !rects_overlap(mover.x, mover.y, mover.width, mover.height, solid_x, solid_y, solid_w, solid_h) {
+        return false;
+    }
+    let mut on_ground = false;
+    if horizontal {
+        let a_cx = mover.center_x();
+        let b_cx = solid_x + solid_w / 2.0;
+        if a_cx < b_cx {
+            mover.x = solid_x - mover.width;
+        } else {
+            mover.x = solid_x + solid_w;
+        }
+        mover.vx = 0.0;
+    } else {
+        let a_cy = mover.center_y();
+        let b_cy = solid_y + solid_h / 2.0;
+        if a_cy < b_cy {
+            mover.y = solid_y - mover.height;
+            if mover.vy >= 0.0 {
+                mover.vy = 0.0;
+                on_ground = true;
+            }
+        } else {
+            mover.y = solid_y + solid_h;
+            if mover.vy < 0.0 {
+                mover.vy = 0.0;
+            }
+        }
+    }
+    on_ground
+}
 
 /// A rectangle body in the world. Position is the top-left corner.
 #[derive(Clone)]
@@ -133,11 +235,12 @@ pub fn hitboxes_overlap(a: &Hitbox, b: &Hitbox) -> bool {
     rects_overlap(ax, ay, aw, ah, bx, by, bw, bh)
 }
 
-/// Physics world: gravity, solid resolution, and one-shot hit tracking.
+/// Physics world: gravity, solid resolution, tilemaps, and one-shot hit tracking.
 pub struct World {
     pub gravity: f64,
     bodies: Vec<Rc<RefCell<Body>>>,
     hitboxes: Vec<Rc<RefCell<Hitbox>>>,
+    tilemaps: Vec<Rc<RefCell<Tilemap>>>,
     /// (attack ptr, hurt ptr) pairs that already scored while the attack stayed active.
     hit_pairs: HashSet<(usize, usize)>,
 }
@@ -148,6 +251,7 @@ impl World {
             gravity,
             bodies: Vec::new(),
             hitboxes: Vec::new(),
+            tilemaps: Vec::new(),
             hit_pairs: HashSet::new(),
         }
     }
@@ -161,6 +265,12 @@ impl World {
     pub fn add_hitbox(&mut self, hb: Rc<RefCell<Hitbox>>) {
         if !self.hitboxes.iter().any(|h| Rc::ptr_eq(h, &hb)) {
             self.hitboxes.push(hb);
+        }
+    }
+
+    pub fn add_tilemap(&mut self, map: Rc<RefCell<Tilemap>>) {
+        if !self.tilemaps.iter().any(|m| Rc::ptr_eq(m, &map)) {
+            self.tilemaps.push(map);
         }
     }
 
@@ -204,41 +314,47 @@ impl World {
             if i == j {
                 continue;
             }
-            // Borrow both carefully.
             let (a_rc, b_rc) = (self.bodies[i].clone(), self.bodies[j].clone());
             let mut a = a_rc.borrow_mut();
             let b = b_rc.borrow();
             if !a.solid || !b.solid {
                 continue;
             }
-            if !rects_overlap(a.x, a.y, a.width, a.height, b.x, b.y, b.width, b.height) {
+            if resolve_aabb_vs_solid(&mut a, b.x, b.y, b.width, b.height, horizontal) && !horizontal {
+                a.on_ground = true;
+            }
+        }
+        self.resolve_tilemaps(i, horizontal);
+    }
+
+    fn resolve_tilemaps(&mut self, i: usize, horizontal: bool) {
+        let body_rc = self.bodies[i].clone();
+        let maps: Vec<_> = self.tilemaps.iter().cloned().collect();
+        for map_rc in maps {
+            let map = map_rc.borrow();
+            if map.solid.is_empty() {
                 continue;
             }
-
-            if horizontal {
-                let a_cx = a.center_x();
-                let b_cx = b.center_x();
-                if a_cx < b_cx {
-                    a.x = b.x - a.width;
-                } else {
-                    a.x = b.x + b.width;
-                }
-                a.vx = 0.0;
-            } else {
-                let a_cy = a.center_y();
-                let b_cy = b.center_y();
-                if a_cy < b_cy {
-                    // Landing on top of b.
-                    a.y = b.y - a.height;
-                    if a.vy >= 0.0 {
-                        a.vy = 0.0;
-                        a.on_ground = true;
+            let cell = map.cell_size;
+            if cell <= 0.0 {
+                continue;
+            }
+            let mut body = body_rc.borrow_mut();
+            if !body.solid {
+                continue;
+            }
+            let left = (body.x / cell).floor() as i64 - 1;
+            let right = ((body.x + body.width) / cell).floor() as i64 + 1;
+            let top = (body.y / cell).floor() as i64 - 1;
+            let bottom = ((body.y + body.height) / cell).floor() as i64 + 1;
+            for ty in top..=bottom {
+                for tx in left..=right {
+                    if !map.is_solid_at(tx, ty) {
+                        continue;
                     }
-                } else {
-                    // Hit underside.
-                    a.y = b.y + b.height;
-                    if a.vy < 0.0 {
-                        a.vy = 0.0;
+                    let (sx, sy, sw, sh) = map.tile_rect(tx, ty);
+                    if resolve_aabb_vs_solid(&mut body, sx, sy, sw, sh, horizontal) && !horizontal {
+                        body.on_ground = true;
                     }
                 }
             }
@@ -315,5 +431,74 @@ mod tests {
         assert!(!world.hits(&attack, &hurt));
         attack.borrow_mut().active = true;
         assert!(world.hits(&attack, &hurt));
+    }
+
+    fn floor_map() -> Rc<RefCell<Tilemap>> {
+        let mut map = Tilemap::new(
+            32.0,
+            vec![
+                "........".into(),
+                "........".into(),
+                "........".into(),
+                "........".into(),
+                "########".into(),
+            ],
+        );
+        map.set_solid_tiles(['#']);
+        Rc::new(RefCell::new(map))
+    }
+
+    #[test]
+    fn gravity_lands_on_tile_floor() {
+        let mut world = World::new(2000.0);
+        let hero = Rc::new(RefCell::new(Body::new(40.0, 0.0, 20.0, 30.0)));
+        world.add_body(hero.clone());
+        world.add_tilemap(floor_map());
+        for _ in 0..180 {
+            world.step(1.0 / 60.0);
+        }
+        let h = hero.borrow();
+        let floor_y = 4.0 * 32.0;
+        assert!(h.on_ground, "expected on ground, y={}", h.y);
+        assert!((h.y + h.height - floor_y).abs() < 0.5, "y={}", h.y);
+    }
+
+    #[test]
+    fn solid_tile_blocks_horizontal() {
+        let mut world = World::new(0.0);
+        // Wall at column 3; hero starts left of it and runs right.
+        let mut map = Tilemap::new(
+            32.0,
+            vec![
+                "...#....".into(),
+                "...#....".into(),
+                "...#....".into(),
+            ],
+        );
+        map.set_solid_tiles(['#']);
+        let map = Rc::new(RefCell::new(map));
+        let hero = Rc::new(RefCell::new(Body::new(10.0, 16.0, 20.0, 28.0)));
+        hero.borrow_mut().vx = 400.0;
+        world.add_body(hero.clone());
+        world.add_tilemap(map);
+        for _ in 0..120 {
+            world.step(1.0 / 60.0);
+        }
+        let h = hero.borrow();
+        let wall_x = 3.0 * 32.0;
+        assert!(h.x + h.width <= wall_x + 0.5, "hero should stop at wall, x={}", h.x);
+        assert!(h.vx.abs() < 0.001, "vx should be zeroed, vx={}", h.vx);
+    }
+
+    #[test]
+    fn tile_at_reads_text_rows() {
+        let map = Tilemap::new(16.0, vec!["#P.".into(), "...".into()]);
+        assert_eq!(map.tile_at(0, 0), Some('#'));
+        assert_eq!(map.tile_at(1, 0), Some('P'));
+        assert_eq!(map.tile_at(2, 1), Some('.'));
+        assert_eq!(map.tile_at(-1, 0), None);
+        assert_eq!(map.tile_at(0, 9), None);
+        assert_eq!(map.width(), 3);
+        assert_eq!(map.height(), 2);
     }
 }

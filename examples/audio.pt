@@ -1,0 +1,90 @@
+// Sound effects + streamed music (volume, pitch, pan, fade, looping).
+// Headless CI can't hear anything — this still type-checks with
+// `plaintext check examples/audio.pt`. Run from the repo root so the
+// asset paths resolve:
+//   plaintext run examples/audio.pt
+//
+// Keys: Space = beep, L = toggle looping hum, M = music on/off,
+//       Up/Down = music volume, F = fade music out over 1.5s.
+
+game "Audio demo" (width: 640, height: 360) {
+    beep = load_sound("examples/assets/beep.wav")
+    hum = load_sound("examples/assets/loop.wav")
+    tune = load_music("examples/assets/loop.wav")
+
+    humming = false
+    music_on = false
+    volume = 0.7
+    status = "Space beep · L loop · M music · ↑↓ volume · F fade"
+
+    set_sound_volume(beep, 0.9)
+    set_sound_pitch(beep, 1.0)
+    set_music_volume(tune, volume)
+
+    on update(dt) {
+        if key_pressed("space") {
+            play_sound(beep)
+            status = "played beep"
+        }
+
+        if key_pressed("l") {
+            if humming {
+                stop_sound(hum)
+                humming = false
+                status = "stopped loop"
+            } else {
+                set_sound_volume(hum, 0.35)
+                set_sound_pan(hum, 0.3)
+                play_sound(hum, loop: true)
+                humming = true
+                status = "looping hum"
+            }
+        }
+
+        if key_pressed("m") {
+            if music_on {
+                stop_music(tune)
+                music_on = false
+                status = "music stopped"
+            } else {
+                set_music_volume(tune, volume)
+                set_music_pitch(tune, 1.0)
+                set_music_pan(tune, 0.5)
+                play_music(tune)
+                music_on = true
+                status = "music playing (loops)"
+            }
+        }
+
+        if key_pressed("up") {
+            volume = volume + 0.1
+            if volume > 1 { volume = 1 }
+            set_music_volume(tune, volume)
+            status = "volume {volume}"
+        }
+        if key_pressed("down") {
+            volume = volume - 0.1
+            if volume < 0 { volume = 0 }
+            set_music_volume(tune, volume)
+            status = "volume {volume}"
+        }
+
+        if key_pressed("f") {
+            fade_music(tune, 0, 1.5)
+            status = "fading music out…"
+        }
+    }
+
+    on draw() {
+        clear_screen(rgb(24, 28, 36))
+        draw_text("Audio depth", 24, 24, 32, white)
+        draw_text(status, 24, 80, 20, lightgray)
+        draw_text("music volume: {volume}", 24, 120, 20, skyblue)
+        if humming {
+            draw_text("hum: looping", 24, 160, 18, orange)
+        }
+        if music_on {
+            draw_text("music: on (streamed)", 24, 188, 18, green)
+        }
+    }
+}

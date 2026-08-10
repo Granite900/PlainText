@@ -560,7 +560,9 @@ fn builtin_hover(name: &str) -> Option<String> {
             "AI tools — needs `import ai`."
         }
         "physics_world" | "body" | "hitbox" | "overlaps" | "pressed" | "draw_body"
-        | "draw_hitbox" | "draw_hitboxes" => "Game kit — needs `import gamekit`.",
+        | "draw_hitbox" | "draw_hitboxes" | "tilemap" | "tile_at" | "draw_tilemap" => {
+            "Game kit — needs `import gamekit`."
+        }
         "get_json" | "post_json" | "parse_json" | "to_json" => {
             "Web / JSON tools — needs `import web` (or use `web.get` / `web.get_json`)."
         }
@@ -568,7 +570,9 @@ fn builtin_hover(name: &str) -> Option<String> {
         | "rgba" | "screen_width" | "screen_height" | "key_down" | "key_pressed" | "mouse_x"
         | "mouse_y" | "mouse_down" | "mouse_pressed" | "load_sprite" | "draw_sprite"
         | "draw_sprite_scaled" | "draw_sprite_rotated" | "sprite_width" | "sprite_height"
-        | "load_sound" | "play_sound" | "load_font" => {
+        | "load_sound" | "play_sound" | "stop_sound" | "set_sound_volume" | "set_sound_pitch"
+        | "set_sound_pan" | "load_music" | "play_music" | "stop_music" | "set_music_volume"
+        | "set_music_pitch" | "set_music_pan" | "fade_music" | "load_font" => {
             "Game / drawing helper — use inside a `game` block."
         }
         _ => {
@@ -596,8 +600,11 @@ const BUILTIN_NAMES: &[&str] = &[
     "every", "clear_screen", "draw_circle", "draw_rectangle", "draw_line", "draw_text", "rgb",
     "rgba", "screen_width", "screen_height", "key_down", "key_pressed", "mouse_x", "mouse_y",
     "mouse_down", "mouse_pressed", "load_sprite", "draw_sprite", "draw_sprite_scaled",
-    "draw_sprite_rotated", "sprite_width", "sprite_height", "load_sound", "play_sound", "load_font",
+    "draw_sprite_rotated", "sprite_width", "sprite_height", "load_sound", "play_sound",
+    "stop_sound", "set_sound_volume", "set_sound_pitch", "set_sound_pan", "load_music",
+    "play_music", "stop_music", "set_music_volume", "set_music_pitch", "set_music_pan",
+    "fade_music", "load_font",
     "neural_network", "load_network", "population", "evolve", "best_of", "physics_world", "body",
-    "hitbox", "overlaps", "pressed", "draw_body", "draw_hitbox", "draw_hitboxes", "get_json",
-    "post_json", "parse_json", "to_json",
+    "hitbox", "overlaps", "pressed", "draw_body", "draw_hitbox", "draw_hitboxes", "tilemap",
+    "tile_at", "draw_tilemap", "get_json", "post_json", "parse_json", "to_json",
 ];

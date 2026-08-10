@@ -34,6 +34,7 @@ pub enum Ty {
     Body,
     Hitbox,
     PhysicsWorld,
+    Tilemap,
     /// The `web` helper from `import web`.
     WebModule,
     /// `T?` — may hold a `T` or `nothing`.
@@ -64,6 +65,7 @@ impl Ty {
             Ty::Body => "body".into(),
             Ty::Hitbox => "hitbox".into(),
             Ty::PhysicsWorld => "physics world".into(),
+            Ty::Tilemap => "tilemap".into(),
             Ty::WebModule => "web".into(),
             Ty::Optional(t) => format!("{}?", t.describe()),
             Ty::Function(_) => "function".into(),
@@ -486,12 +488,13 @@ impl Checker {
     fn check_widget(&mut self, w: &Widget) {
         const WIDGETS: &[&str] = &[
             "column", "row", "text", "button", "spacer", "text_field", "checkbox", "slider", "image",
+            "scroll", "list", "dropdown",
         ];
         if !WIDGETS.contains(&w.name.as_str()) {
             self.error(
                 w.span,
                 format!("unknown widget `{}`", w.name),
-                Some("widgets are column, row, text, button, spacer, text_field, checkbox, slider, image".into()),
+                Some("widgets are column, row, text, button, spacer, text_field, checkbox, slider, image, scroll, list, dropdown".into()),
             );
         }
         if let Some(label) = &w.label {
@@ -503,7 +506,7 @@ impl Checker {
         // (text_field) at run time.
         let expected = match w.name.as_str() {
             "checkbox" => Some(Ty::Bool),
-            "slider" => Some(Ty::Number),
+            "slider" | "list" | "dropdown" => Some(Ty::Number),
             "text_field" => Some(Ty::Text),
             _ => None,
         };
@@ -542,12 +545,27 @@ impl Checker {
         }
         // Interactive inputs rebuild from your variables each frame — without
         // `bind:` or `value:`/`checked:`, typed clicks have nowhere to stick.
-        if matches!(w.name.as_str(), "text_field" | "checkbox" | "slider") && !has_bind && !has_value {
+        if matches!(
+            w.name.as_str(),
+            "text_field" | "checkbox" | "slider" | "list" | "dropdown"
+        ) && !has_bind
+            && !has_value
+        {
             self.error(
                 w.span,
                 format!("`{}` needs bind: or value: so its state can stick", w.name),
                 Some("example: text_field (bind: name, width: 320)".into()),
             );
+        }
+        if matches!(w.name.as_str(), "list" | "dropdown") {
+            let has_items = w.props.iter().any(|(n, _)| n == "items");
+            if !has_items {
+                self.error(
+                    w.span,
+                    format!("`{}` needs items: a list of text choices", w.name),
+                    Some("example: list (items: choices, bind: picked, height: 160)".into()),
+                );
+            }
         }
         for child in &w.children {
             self.check_widget(child);
@@ -1167,10 +1185,17 @@ impl Checker {
                 }
             },
             Ty::PhysicsWorld => match name {
-                "add" | "step" | "sync_hitboxes" => Ty::Nothing,
+                "add" | "add_tilemap" | "step" | "sync_hitboxes" => Ty::Nothing,
                 "hits" => Ty::Bool,
                 _ => {
                     self.error(span, format!("a physics world has no method `{}`", name), None);
+                    Ty::Dynamic
+                }
+            },
+            Ty::Tilemap => match name {
+                "tile_at" => Ty::Optional(Box::new(Ty::Text)),
+                _ => {
+                    self.error(span, format!("a tilemap has no method `{}`", name), None);
                     Ty::Dynamic
                 }
             },
@@ -1255,21 +1280,28 @@ impl Checker {
         let _ = span;
         match b {
             Print | Exit | WriteFile | AppendFile | ClearScreen | DrawCircle | DrawRectangle | DrawLine
-            | DrawText | DrawSprite | DrawSpriteScaled | DrawSpriteRotated | PlaySound | After
-            | Every => Ty::Nothing,
+            | DrawText | DrawSprite | DrawSpriteScaled | DrawSpriteRotated | PlaySound | StopSound
+            | SetSoundVolume | SetSoundPitch | SetSoundPan | PlayMusic | StopMusic | SetMusicVolume
+            | SetMusicPitch | SetMusicPan | FadeMusic | After | Every | Save => Ty::Nothing,
             ToText | ReadFile | Input => Ty::Text,
-            FileExists | KeyDown | KeyPressed | MouseDown | MousePressed => Ty::Bool,
+            FileExists | KeyDown | KeyPressed | MouseDown | MousePressed | HasSave => Ty::Bool,
+            // A saved file can hold any shape (or be missing → nothing).
+            Load => Ty::Dynamic,
             Rgb | Rgba => Ty::List(Box::new(Ty::Number)),
             ToNumber | Length | Min | Greatest | Abs | Sqrt | Floor | Ceil | Round | RandomBetween
             | Pow | Clamp | Sin | Cos | Tan | Now | Clock | ScreenWidth | ScreenHeight | MouseX
-            | MouseY | LoadSprite | SpriteWidth | SpriteHeight | LoadSound | LoadFont => Ty::Number,
+            | MouseY | LoadSprite | SpriteWidth | SpriteHeight | LoadSound | LoadMusic | LoadFont => {
+                Ty::Number
+            }
             NeuralNetwork | LoadNetwork | BestOf => Ty::Network,
             Population | Evolve => Ty::List(Box::new(Ty::Network)),
             PhysicsWorld => Ty::PhysicsWorld,
             Body => Ty::Body,
             Hitbox => Ty::Hitbox,
+            Tilemap => Ty::Tilemap,
+            TileAt => Ty::Optional(Box::new(Ty::Text)),
             Overlaps | Pressed => Ty::Bool,
-            DrawBody | DrawHitbox | DrawHitboxes => Ty::Nothing,
+            DrawBody | DrawHitbox | DrawHitboxes | DrawTilemap => Ty::Nothing,
             WebPostJson | ToJson => Ty::Text,
             WebGetJson | ParseJson => Ty::Dynamic,
             // read_csv → rows of numbers; load_dataset → [examples, answers].
@@ -1306,11 +1338,21 @@ impl Checker {
             },
             Ty::PhysicsWorld => match name {
                 "gravity" => Ty::Number,
-                "add" | "step" | "hits" | "sync_hitboxes" => Ty::Function(Rc::new(FnSig {
+                "add" | "add_tilemap" | "step" | "hits" | "sync_hitboxes" => Ty::Function(Rc::new(FnSig {
                     id: None, params: vec![Ty::Dynamic], required: 0,
                 })),
                 _ => {
                     self.error(span, format!("a physics world has no field `{}`", name), None);
+                    Ty::Dynamic
+                }
+            },
+            Ty::Tilemap => match name {
+                "cell_size" | "width" | "height" => Ty::Number,
+                "tile_at" => Ty::Function(Rc::new(FnSig {
+                    id: None, params: vec![Ty::Number, Ty::Number], required: 2,
+                })),
+                _ => {
+                    self.error(span, format!("a tilemap has no field `{}`", name), None);
                     Ty::Dynamic
                 }
             },
@@ -1506,6 +1548,7 @@ fn assignable(from: &Ty, to: &Ty) -> bool {
         (Ty::Body, Ty::Body) => true,
         (Ty::Hitbox, Ty::Hitbox) => true,
         (Ty::PhysicsWorld, Ty::PhysicsWorld) => true,
+        (Ty::Tilemap, Ty::Tilemap) => true,
         (Ty::WebModule, Ty::WebModule) => true,
         (Ty::List(a), Ty::List(b)) => assignable(a, b),
         (Ty::Dictionary(ak, av), Ty::Dictionary(bk, bv)) => assignable(ak, bk) && assignable(av, bv),
@@ -1553,6 +1596,7 @@ fn types_equal(a: &Ty, b: &Ty) -> bool {
         (Ty::Body, Ty::Body) => true,
         (Ty::Hitbox, Ty::Hitbox) => true,
         (Ty::PhysicsWorld, Ty::PhysicsWorld) => true,
+        (Ty::Tilemap, Ty::Tilemap) => true,
         (Ty::WebModule, Ty::WebModule) => true,
         (Ty::List(x), Ty::List(y)) => types_equal(x, y),
         (Ty::Dictionary(xk, xv), Ty::Dictionary(yk, yv)) => types_equal(xk, yk) && types_equal(xv, yv),

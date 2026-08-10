@@ -31,8 +31,9 @@ backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 
 - **Reads like English.** `make function called`, `for every item in items`, `repeat 3 times`.
 - **Catches mistakes early.** A real type checker, but inference means you almost never write a type.
-- **Games & UIs built in.** `game { on update … on draw … }` and `window { column { button … text_field … } }`, drawn natively. `import gamekit` adds gravity, solid bodies, and hitboxes.
-- **Batteries included.** Math, lists (map/filter/fold-style tools), dictionaries, text, files, time, timers, and console input out of the box.
+- **Games built in.** `game { on update … on draw … }`, drawn natively. `import gamekit` adds gravity, solid bodies, hitboxes, and character-grid **tilemaps** — with a `plaintext edit_tilemap` painter to lay out levels visually. Sound effects and streamed music (volume / pitch / pan / fade) included.
+- **Real desktop UIs.** `window { column { button … text_field … } }` with scroll areas, lists, dropdowns, checkboxes, sliders, and multiline text — bound straight to your variables.
+- **Batteries included.** Math, lists (map/filter/fold-style tools), dictionaries, text, files, time, timers, console input, and `save` / `load` for structured progress that survives restarts.
 - **Train a neural network.** `import ai`, then `neural_network(...)`, `.train(...)`, `.predict(...)` — even watch it learn live in a game window, or train on a GPU (`device: auto`, covering NVIDIA / AMD / Apple).
 - **Ship a single app.** `plaintext build game.pt` bundles your program into a standalone executable (Windows, macOS, or Linux).
 - **No memory management.** Garbage collected — you never think about it.
@@ -53,6 +54,7 @@ backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 plaintext run examples/basics.pt     # run a program
 plaintext check examples/basics.pt   # check for errors without running
 plaintext build examples/basics.pt   # bundle into a standalone app
+plaintext edit_tilemap examples/tilemap.pt   # paint a level (rewrites the file)
 plaintext repl                       # try expressions interactively
 plaintext new mygame                 # scaffold a new project
 ```
@@ -115,7 +117,11 @@ See **[`examples/README.md`](examples/README.md)** for the full index. Highlight
 | [`examples/list_tools.pt`](examples/list_tools.pt) | Multi-file `import` + list tools |
 | [`examples/catch.pt`](examples/catch.pt) | Complete arcade game |
 | [`examples/platformer.pt`](examples/platformer.pt) | `import gamekit` platformer |
+| [`examples/tilemap.pt`](examples/tilemap.pt) | Text-row tilemap levels + menu/play screen |
 | [`examples/form.pt`](examples/form.pt) | Desktop form UI |
+| [`examples/scroll_list.pt`](examples/scroll_list.pt) | Scroll, list, dropdown, multiline text |
+| [`examples/audio.pt`](examples/audio.pt) | Sounds, looping SFX, streamed music, fade |
+| [`examples/save.pt`](examples/save.pt) | `save` / `load` progress across runs |
 | [`examples/fetch.pt`](examples/fetch.pt) | `import web` (offline JSON) |
 | [`examples/learn.pt`](examples/learn.pt) | `import ai` — train, GPU, save/load |
 | [`examples/dataset.pt`](examples/dataset.pt) | Train from CSV + accuracy |
@@ -160,42 +166,30 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v2.8.0`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
+(`v2.9.0`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
-## Changes since 2.0
+## What's new
 
-Language & modules
-Inline / anonymous functions — make function (…) { … } for map/filter, on_click, timers, etc.
-Richer UI — text_field, checkbox, slider, image, plus bind / on_change
-import gamekit — physics world, bodies, hitboxes, gravity/solids, pressed, draw helpers
-import web — web.get / web.get_json / web.post_json, to_json / parse_json (local paths for offline CI)
-Neuroevolution / datasets — evolve-style NN work, dataset loading, decimal rounding (early post-2.0)
-Tooling & editor
-plaintext lsp — diagnostics (same as check), hover, go-to-def, completions
-VS Code extension — spawns the LSP; clearer install docs
-Shared src/load.rs for CLI + LSP
-Platforms & releases
-Linux x64 builds + install-linux.sh
-Intel Mac builds (plaintext-macos-x64.zip)
-Still: Windows x64, macOS arm64
-Automated setup scripts, wider CI smokes (examples, console, plaintext build on all four)
-Docs & examples
-New lessons: game kit (12), NN (13), web (14)
-Examples condensed (~23 → ~14) with an index; several demos merged or removed
-Docs/benchmarks polish (2.2)
-Version trail
-Version	Focus
-2.0
-NN / GPU / build baseline
-2.2
-Docs, benchmarks, neuroevolution/datasets
-2.4
-Lambdas + form UI
-2.5–2.6*
-gamekit + web (shipped in 2.8)
-2.7*
-LSP + VS Code client (shipped in 2.8)
-2.8
-Linux + Intel Mac releases
-* Intermediate tracks landed in the 2.8 release rather than separate tags.
+**2.9** — a bigger toolbox for apps and games:
+
+- **UI depth** — `scroll` areas, `list` and `dropdown` pickers, and multi-line `text_field`,
+  with Tab / Shift+Tab focus movement.
+- **Audio depth** — looping sound effects, streamed background **music**, and
+  volume / pitch / pan / fade (`load_music`, `play_music`, `fade_music`, `set_sound_*`, …).
+- **Tilemaps** — character-grid levels (`tilemap`, `tile_at`, `draw_tilemap`) that solid bodies
+  collide with, plus **`plaintext edit_tilemap`** — a paint window that lays out a level and
+  rewrites your `.pt` file.
+- **Save system** — `save` / `load` / `has_save` persist any value (including your own class
+  instances) to disk, written atomically.
+
+**Earlier in the 2.x line:**
+
+- **2.8** — Linux x64 and Intel-Mac release builds; `plaintext lsp` (diagnostics, hover,
+  go-to-definition, completions) and the VS Code extension that spawns it.
+- **2.4** — inline/anonymous functions (`make function (…) { … }`) and the first form UI
+  (`text_field` / `checkbox` / `slider` / `image` with `bind:` / `on_change`).
+- **2.x modules** — `import gamekit` (gravity, bodies, hitboxes), `import web`
+  (`web.get` / `get_json` / `post_json`, `to_json` / `parse_json`), neuroevolution and CSV
+  dataset loading for `import ai`.
+- **2.0** — the neural-network / GPU / `plaintext build` baseline.

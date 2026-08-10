@@ -63,19 +63,38 @@ game "Sprites" (width: 800, height: 600) {
 }
 ```
 
-Play a sound with `play_sound(beep)`. Sizes come from `sprite_width(ship)` / `sprite_height(ship)`.
+Play a one-shot with `play_sound(beep)`, or loop a sound effect with
+`play_sound(hum, loop: true)` / `stop_sound(hum)`.
+
+For longer background tracks use **music** (streamed, separate ids from sounds):
+
+```plaintext
+tune = load_music("assets/theme.ogg")
+play_music(tune)              // loops by default
+set_music_volume(tune, 0.6)   // 0..1
+fade_music(tune, 0, 1.5)      // fade out over 1.5 seconds
+stop_music(tune)
+```
+
+Also: `set_sound_volume` / `set_sound_pitch` / `set_sound_pan`, and the matching
+`set_music_volume` / `set_music_pitch` / `set_music_pan`. Sound ids and music ids do not share a
+namespace — keep them in different variables.
+
+Sizes come from `sprite_width(ship)` / `sprite_height(ship)`.
 
 **Where do the files go?** Paths are relative to the folder you run `plaintext` **from**, not the
 `.pt` file's folder. Keep images in an `assets/` folder next to your program and run from there.
-PNG images, WAV/OGG sounds, and TTF fonts are supported.
+PNG images, WAV/OGG audio, and TTF fonts are supported.
 
 ## Practice — play these
 
 | Example | Idea |
 |---------|------|
 | [`timers.pt`](../../examples/timers.pt) | `after` / `every` |
+| [`audio.pt`](../../examples/audio.pt) | Sounds, looping SFX, streamed music, volume / fade |
 | [`catch.pt`](../../examples/catch.pt) | Full arcade loop (score, lives, restart) |
 | [`platformer.pt`](../../examples/platformer.pt) | Gravity + hitboxes via `import gamekit` (lesson 12) |
+| [`tilemap.pt`](../../examples/tilemap.pt) | Text-row levels + menu/play screens (lesson 12) |
 
 Sprites (`load_sprite`, `draw_sprite_rotated`, …) are in the section above; UI examples
 [`counter.pt`](../../examples/counter.pt) and [`form.pt`](../../examples/form.pt) also load images.

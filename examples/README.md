@@ -20,6 +20,7 @@ Paths like `examples/assets/...` and `examples/data/...` are relative to **where
 | [`list_tools.pt`](list_tools.pt) | Multi-file `import`, `sorted` / `transformed_by` / `kept_if` / `combined`, `exit` |
 | [`toolbox.pt`](toolbox.pt) | Helper module imported by `list_tools.pt` (not run alone) |
 | [`timers.pt`](timers.pt) | `after` / `every` (runs until you stop it) |
+| [`save.pt`](save.pt) | `save` / `load` / `has_save` — remembers a high score across runs |
 
 ## Games & UI
 
@@ -27,11 +28,14 @@ Paths like `examples/assets/...` and `examples/data/...` are relative to **where
 |------|---------------|
 | [`catch.pt`](catch.pt) | Complete arcade loop — score, lives, restart |
 | [`platformer.pt`](platformer.pt) | `import gamekit` — gravity, platforms, attack hitboxes (hold **H**) |
+| [`tilemap.pt`](tilemap.pt) | Text-row tilemap, solid tiles, menu ↔ play via a `screen` variable (`plaintext edit_tilemap` to paint) |
 | [`counter.pt`](counter.pt) | Desktop UI — buttons and a live label |
 | [`form.pt`](form.pt) | Settings form — `text_field`, `checkbox`, `slider`, `image`, `bind:` |
+| [`scroll_list.pt`](scroll_list.pt) | `scroll`, `list`, `dropdown`, multiline `text_field`, Tab focus |
+| [`audio.pt`](audio.pt) | Sound effects, looping SFX, streamed music, volume / pitch / pan / fade |
 
 Sprites and sounds are covered in [lesson 10](../docs/learn/10-games.md); `counter.pt` /
-`form.pt` load button images from [`assets/`](assets/).
+`form.pt` load button images from [`assets/`](assets/); `audio.pt` uses small WAVs there too.
 
 ## Web & AI
 

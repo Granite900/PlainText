@@ -12,7 +12,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use crate::ast::*;
 use crate::diagnostics::Diagnostic;
 use crate::gc::Heap;
-use crate::gfx::{Color, DrawCmd, GfxBridge};
+use crate::gfx::{Color, DrawCmd, GfxBridge, MusicCmd, SoundCmd};
 use crate::token::Span;
 use crate::ui::{Align, UiKind, UiNode};
 use crate::value::*;
@@ -254,9 +254,12 @@ impl Interpreter {
             "checkbox" => UiKind::Checkbox,
             "slider" => UiKind::Slider,
             "image" => UiKind::Image,
+            "scroll" => UiKind::Scroll,
+            "list" => UiKind::List,
+            "dropdown" => UiKind::Dropdown,
             other => {
                 return Err(Diagnostic::new(w.span, format!("unknown widget `{}`", other))
-                    .with_hint("widgets are column, row, text, button, spacer, text_field, checkbox, slider, image"));
+                    .with_hint("widgets are column, row, text, button, spacer, text_field, checkbox, slider, image, scroll, list, dropdown"));
             }
         };
         let mut node = UiNode::new(kind);
@@ -315,6 +318,9 @@ impl Interpreter {
             }
             UiKind::Slider => node.number = self.as_number(&v, span)? as f32,
             UiKind::TextField => node.text = Some(v.display()),
+            UiKind::List | UiKind::Dropdown => {
+                node.selected = self.as_number(&v, span)? as i32;
+            }
             _ => {}
         }
         Ok(())
@@ -333,6 +339,34 @@ impl Interpreter {
             "min" => node.min = self.as_number(&v, span)? as f32,
             "max" => node.max = self.as_number(&v, span)? as f32,
             "step" => node.step = self.as_number(&v, span)? as f32,
+            "multiline" => {
+                node.multiline = match v {
+                    Value::Bool(b) => b,
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("multiline needs true or false, got a {}", other.type_name()),
+                        ));
+                    }
+                };
+            }
+            "items" => {
+                match v {
+                    Value::List(items) => {
+                        let mut out = Vec::new();
+                        for item in items.borrow().iter() {
+                            out.push(self.as_text(item, span)?);
+                        }
+                        node.items = out;
+                    }
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("items needs a list of text, got a {}", other.type_name()),
+                        ));
+                    }
+                }
+            }
             "on_change" => {
                 if !is_callable(&v) {
                     return Err(Diagnostic::new(span, "on_change needs a function")
@@ -1041,8 +1075,9 @@ impl Interpreter {
                     span,
                     format!("a physics world has no field `{}`", name),
                 )
-                .with_hint("use methods: .add, .step, .hits, .sync_hitboxes")),
+                .with_hint("use methods: .add, .add_tilemap, .step, .hits, .sync_hitboxes")),
             },
+            Value::Tilemap(m) => self.get_tilemap_field(m, name, span),
             _ => Err(Diagnostic::new(
                 span,
                 format!("a {} has no field `{}`", obj.type_name(), name),
@@ -1202,6 +1237,7 @@ impl Interpreter {
             Value::Body(b) => self.body_method(&b.clone(), name, args, span),
             Value::Hitbox(h) => self.hitbox_method(&h.clone(), name, args, span),
             Value::PhysicsWorld(w) => self.world_method(&w.clone(), name, args, span),
+            Value::Tilemap(m) => self.tilemap_method(&m.clone(), name, args, span),
             Value::WebModule => self.web_method(name, args, span),
             other => Err(Diagnostic::new(
                 span,
@@ -1785,13 +1821,41 @@ impl Interpreter {
                 match &args[0] {
                     Value::Body(b) => world.borrow_mut().add_body(b.clone()),
                     Value::Hitbox(h) => world.borrow_mut().add_hitbox(h.clone()),
+                    Value::Tilemap(m) => world.borrow_mut().add_tilemap(m.clone()),
                     other => {
                         return Err(Diagnostic::new(
                             span,
-                            format!("world.add needs a body or hitbox, got a {}", other.type_name()),
-                        ));
+                            format!(
+                                "world.add needs a body, hitbox, or tilemap, got a {}",
+                                other.type_name()
+                            ),
+                        ).with_hint("for solid tiles use world.add_tilemap(map, solid_tiles: [\"#\"])"));
                     }
                 }
+                Ok(Value::Nothing)
+            }
+            "add_tilemap" => {
+                // map, solid_tiles: ["#"]  → args [map, options-dict] or just [map]
+                if args.is_empty() || args.len() > 2 {
+                    return Err(Diagnostic::new(
+                        span,
+                        "add_tilemap takes a tilemap, and optional solid_tiles: [\"#\"]",
+                    ));
+                }
+                let map = match &args[0] {
+                    Value::Tilemap(m) => m.clone(),
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("add_tilemap needs a tilemap, got a {}", other.type_name()),
+                        ));
+                    }
+                };
+                let solids = self.read_solid_tiles(args.get(1), span)?;
+                if !solids.is_empty() {
+                    map.borrow_mut().set_solid_tiles(solids);
+                }
+                world.borrow_mut().add_tilemap(map);
                 Ok(Value::Nothing)
             }
             "step" => {
@@ -1815,7 +1879,114 @@ impl Interpreter {
                 }
             }
             _ => Err(Diagnostic::new(span, format!("a physics world has no method `{}`", name))
-                .with_hint("worlds have add, step, hits, sync_hitboxes")),
+                .with_hint("worlds have add, add_tilemap, step, hits, sync_hitboxes")),
+        }
+    }
+
+    fn get_tilemap_field(
+        &self,
+        m: &Rc<RefCell<crate::gamekit::Tilemap>>,
+        name: &str,
+        span: Span,
+    ) -> EvalResult {
+        let m = m.borrow();
+        Ok(match name {
+            "cell_size" => Value::Number(m.cell_size),
+            "width" => Value::Number(m.width() as f64),
+            "height" => Value::Number(m.height() as f64),
+            _ => {
+                return Err(Diagnostic::new(span, format!("a tilemap has no field `{}`", name))
+                    .with_hint("tilemaps have cell_size, width, height, and tile_at(x, y)"));
+            }
+        })
+    }
+
+    fn tilemap_method(
+        &mut self,
+        map: &Rc<RefCell<crate::gamekit::Tilemap>>,
+        name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> EvalResult {
+        match name {
+            "tile_at" => {
+                self.expect_arity(name, &args, 2, span)?;
+                let x = self.as_number(&args[0], span)?.floor() as i64;
+                let y = self.as_number(&args[1], span)?.floor() as i64;
+                Ok(match map.borrow().tile_at(x, y) {
+                    Some(ch) => Value::text(ch.to_string()),
+                    None => Value::Nothing,
+                })
+            }
+            _ => Err(Diagnostic::new(span, format!("a tilemap has no method `{}`", name))
+                .with_hint("tilemaps have tile_at(x, y)")),
+        }
+    }
+
+    /// Read `solid_tiles:` from an options dict (list of 1-char texts, or one text of chars).
+    fn read_solid_tiles(&self, opts: Option<&Value>, span: Span) -> Result<Vec<char>, Diagnostic> {
+        let Some(raw) = dict_get(opts, "solid_tiles").or_else(|| {
+            // Allow a bare list/text as the second positional arg.
+            match opts {
+                Some(Value::List(_)) | Some(Value::Text(_)) => opts.cloned(),
+                _ => None,
+            }
+        }) else {
+            return Ok(Vec::new());
+        };
+        match raw {
+            Value::List(items) => {
+                let mut out = Vec::new();
+                for item in items.borrow().iter() {
+                    let s = self.as_text(item, span)?;
+                    let mut chars = s.chars();
+                    let Some(ch) = chars.next() else {
+                        return Err(Diagnostic::new(
+                            span,
+                            "solid_tiles entries must be one character each, e.g. \"#\"",
+                        ));
+                    };
+                    if chars.next().is_some() {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("solid_tiles entry \"{}\" should be a single character", s),
+                        ));
+                    }
+                    out.push(ch);
+                }
+                Ok(out)
+            }
+            Value::Text(s) => Ok(s.chars().collect()),
+            other => Err(Diagnostic::new(
+                span,
+                format!(
+                    "solid_tiles needs a list of characters like [\"#\"], got a {}",
+                    other.type_name()
+                ),
+            )),
+        }
+    }
+
+    fn read_tilemap_rows(&self, opts: Option<&Value>, span: Span) -> Result<Vec<String>, Diagnostic> {
+        let rows_v = dict_get(opts, "rows").ok_or_else(|| {
+            Diagnostic::new(span, "tilemap needs rows: [\"###\", \"...\"]")
+                .with_hint("each text item is one row of tile characters")
+        })?;
+        match rows_v {
+            Value::List(items) => {
+                let mut rows = Vec::new();
+                for item in items.borrow().iter() {
+                    rows.push(self.as_text(item, span)?);
+                }
+                if rows.is_empty() {
+                    return Err(Diagnostic::new(span, "tilemap rows can't be empty"));
+                }
+                Ok(rows)
+            }
+            other => Err(Diagnostic::new(
+                span,
+                format!("tilemap rows must be a list of text, got a {}", other.type_name()),
+            )),
         }
     }
 
@@ -2208,6 +2379,40 @@ impl Interpreter {
                 let an = self.new_list(answers);
                 Ok(self.new_list(vec![ex, an]))
             }
+            Builtin::Save => {
+                self.expect_arity("save", &args, 2, span)?;
+                let path = self.as_text(&args[1], span)?;
+                let json = self.value_to_saved(&args[0], span)?;
+                let text = serde_json::to_string_pretty(&json)
+                    .map_err(|e| Diagnostic::new(span, format!("couldn't save: {}", e)))?;
+                // Write to a temp file then rename, so a crash mid-save can't
+                // leave a half-written (corrupt) save behind.
+                let tmp = format!("{}.tmp", path);
+                std::fs::write(&tmp, text.as_bytes())
+                    .and_then(|_| std::fs::rename(&tmp, &path))
+                    .map(|_| Value::Nothing)
+                    .map_err(|e| Diagnostic::new(span, format!("couldn't save \"{}\": {}", path, e)))
+            }
+            Builtin::Load => {
+                self.expect_arity("load", &args, 1, span)?;
+                let path = self.as_text(&args[0], span)?;
+                match std::fs::read_to_string(&path) {
+                    Ok(text) => {
+                        let j: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+                            Diagnostic::new(span, format!("the save file \"{}\" is damaged: {}", path, e))
+                        })?;
+                        Ok(self.saved_to_value(&j))
+                    }
+                    // A missing save is normal (first run) — hand back nothing.
+                    Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::Nothing),
+                    Err(e) => Err(Diagnostic::new(span, format!("couldn't read \"{}\": {}", path, e))),
+                }
+            }
+            Builtin::HasSave => {
+                self.expect_arity("has_save", &args, 1, span)?;
+                let path = self.as_text(&args[0], span)?;
+                Ok(Value::Bool(std::path::Path::new(&path).exists()))
+            }
             Builtin::Now => {
                 self.expect_arity("now", &args, 0, span)?;
                 let secs = SystemTime::now()
@@ -2360,10 +2565,87 @@ impl Interpreter {
                 Ok(Value::Number(id as f64))
             }
             Builtin::PlaySound => {
-                self.expect_arity("play_sound", &args, 1, span)?;
+                // `play_sound(id)` or `play_sound(id, loop: true)`.
+                if args.is_empty() || args.len() > 2 {
+                    return Err(Diagnostic::new(span, "play_sound needs a sound id")
+                        .with_hint("e.g. play_sound(beep) or play_sound(beep, loop: true)"));
+                }
+                let id = self.as_index(&args[0], span)?;
+                let looping = if args.len() == 2 {
+                    self.opt_bool(args.get(1), "loop", false, span)?
+                } else {
+                    false
+                };
+                let g = self.gfx_or_err(span)?;
+                g.borrow_mut().sound_cmds.push(SoundCmd::Play { id, looping });
+                Ok(Value::Nothing)
+            }
+            Builtin::StopSound => {
+                self.expect_arity("stop_sound", &args, 1, span)?;
                 let id = self.as_index(&args[0], span)?;
                 let g = self.gfx_or_err(span)?;
-                g.borrow_mut().sound_plays.push(id);
+                g.borrow_mut().sound_cmds.push(SoundCmd::Stop(id));
+                Ok(Value::Nothing)
+            }
+            Builtin::SetSoundVolume | Builtin::SetSoundPitch | Builtin::SetSoundPan => {
+                self.expect_arity(b.name(), &args, 2, span)?;
+                let id = self.as_index(&args[0], span)?;
+                let n = self.as_number(&args[1], span)? as f32;
+                let g = self.gfx_or_err(span)?;
+                let cmd = match b {
+                    Builtin::SetSoundVolume => SoundCmd::SetVolume { id, volume: n.clamp(0.0, 1.0) },
+                    Builtin::SetSoundPitch => SoundCmd::SetPitch { id, pitch: n.max(0.0) },
+                    Builtin::SetSoundPan => SoundCmd::SetPan { id, pan: n.clamp(0.0, 1.0) },
+                    _ => unreachable!(),
+                };
+                g.borrow_mut().sound_cmds.push(cmd);
+                Ok(Value::Nothing)
+            }
+            Builtin::LoadMusic => {
+                self.expect_arity("load_music", &args, 1, span)?;
+                let path = self.as_text(&args[0], span)?;
+                if !std::path::Path::new(&path).exists() {
+                    return Err(Diagnostic::new(span, format!("couldn't find music file \"{}\"", path)));
+                }
+                let g = self.gfx_or_err(span)?;
+                let id = g.borrow_mut().queue_music(path);
+                Ok(Value::Number(id as f64))
+            }
+            Builtin::PlayMusic => {
+                self.expect_arity("play_music", &args, 1, span)?;
+                let id = self.as_index(&args[0], span)?;
+                let g = self.gfx_or_err(span)?;
+                g.borrow_mut().music_cmds.push(MusicCmd::Play(id));
+                Ok(Value::Nothing)
+            }
+            Builtin::StopMusic => {
+                self.expect_arity("stop_music", &args, 1, span)?;
+                let id = self.as_index(&args[0], span)?;
+                let g = self.gfx_or_err(span)?;
+                g.borrow_mut().music_cmds.push(MusicCmd::Stop(id));
+                Ok(Value::Nothing)
+            }
+            Builtin::SetMusicVolume | Builtin::SetMusicPitch | Builtin::SetMusicPan => {
+                self.expect_arity(b.name(), &args, 2, span)?;
+                let id = self.as_index(&args[0], span)?;
+                let n = self.as_number(&args[1], span)? as f32;
+                let g = self.gfx_or_err(span)?;
+                let cmd = match b {
+                    Builtin::SetMusicVolume => MusicCmd::SetVolume { id, volume: n.clamp(0.0, 1.0) },
+                    Builtin::SetMusicPitch => MusicCmd::SetPitch { id, pitch: n.max(0.0) },
+                    Builtin::SetMusicPan => MusicCmd::SetPan { id, pan: n.clamp(0.0, 1.0) },
+                    _ => unreachable!(),
+                };
+                g.borrow_mut().music_cmds.push(cmd);
+                Ok(Value::Nothing)
+            }
+            Builtin::FadeMusic => {
+                self.expect_arity("fade_music", &args, 3, span)?;
+                let id = self.as_index(&args[0], span)?;
+                let target = (self.as_number(&args[1], span)? as f32).clamp(0.0, 1.0);
+                let seconds = (self.as_number(&args[2], span)? as f32).max(0.0);
+                let g = self.gfx_or_err(span)?;
+                g.borrow_mut().music_cmds.push(MusicCmd::Fade { id, target, seconds });
                 Ok(Value::Nothing)
             }
             Builtin::LoadFont => {
@@ -2647,6 +2929,110 @@ impl Interpreter {
                 }
                 Ok(Value::Nothing)
             }
+            Builtin::Tilemap => {
+                let o = args.first();
+                let cell_size = self.opt_number(o, "cell_size", 32.0, span)?;
+                if cell_size < 1.0 {
+                    return Err(Diagnostic::new(span, "cell_size must be at least 1"));
+                }
+                let rows = self.read_tilemap_rows(o, span)?;
+                let mut map = crate::gamekit::Tilemap::new(cell_size, rows);
+                let solids = self.read_solid_tiles(o, span)?;
+                if !solids.is_empty() {
+                    map.set_solid_tiles(solids);
+                }
+                Ok(Value::Tilemap(Rc::new(RefCell::new(map))))
+            }
+            Builtin::TileAt => {
+                self.expect_arity("tile_at", &args, 3, span)?;
+                let map = match &args[0] {
+                    Value::Tilemap(m) => m.borrow(),
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("tile_at needs a tilemap, got a {}", other.type_name()),
+                        ));
+                    }
+                };
+                let x = self.as_number(&args[1], span)?.floor() as i64;
+                let y = self.as_number(&args[2], span)?.floor() as i64;
+                Ok(match map.tile_at(x, y) {
+                    Some(ch) => Value::text(ch.to_string()),
+                    None => Value::Nothing,
+                })
+            }
+            Builtin::DrawTilemap => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(Diagnostic::new(
+                        span,
+                        "draw_tilemap takes a tilemap and tile_colors: dictionary { \"#\": gray }",
+                    ));
+                }
+                let map = match &args[0] {
+                    Value::Tilemap(m) => m.borrow(),
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!("draw_tilemap needs a tilemap, got a {}", other.type_name()),
+                        ));
+                    }
+                };
+                let colors = match args.get(1) {
+                    Some(Value::Dictionary(m)) => {
+                        if let Some(inner) = m.borrow().get(&MapKey::Text("tile_colors".into())) {
+                            match inner {
+                                Value::Dictionary(d) => d,
+                                other => {
+                                    return Err(Diagnostic::new(
+                                        span,
+                                        format!(
+                                            "tile_colors needs a dictionary, got a {}",
+                                            other.type_name()
+                                        ),
+                                    ));
+                                }
+                            }
+                        } else {
+                            m.clone()
+                        }
+                    }
+                    Some(other) => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!(
+                                "draw_tilemap colors need a dictionary, got a {}",
+                                other.type_name()
+                            ),
+                        ));
+                    }
+                    None => Rc::new(RefCell::new(PtMap::new())),
+                };
+                let gfx = self.gfx.as_ref().ok_or_else(|| {
+                    Diagnostic::new(span, "draw_tilemap only works inside a game window")
+                })?;
+                let mut g = gfx.borrow_mut();
+                let cell = map.cell_size as f32;
+                for (ty, row) in map.rows.iter().enumerate() {
+                    for (tx, ch) in row.chars().enumerate() {
+                        if ch == ' ' {
+                            continue;
+                        }
+                        let key = MapKey::Text(ch.to_string());
+                        let Some(color_v) = colors.borrow().get(&key) else {
+                            continue;
+                        };
+                        let color = self.as_color(&color_v, span)?;
+                        g.draw.push(crate::gfx::DrawCmd::Rect {
+                            x: tx as f32 * cell,
+                            y: ty as f32 * cell,
+                            w: cell,
+                            h: cell,
+                            color,
+                        });
+                    }
+                }
+                Ok(Value::Nothing)
+            }
             Builtin::WebGetJson => {
                 self.expect_arity("get_json", &args, 1, span)?;
                 let url = self.as_text(&args[0], span)?;
@@ -2740,7 +3126,10 @@ impl Interpreter {
 
     fn gfx_or_err(&self, span: Span) -> Result<Rc<RefCell<GfxBridge>>, Diagnostic> {
         self.gfx.clone().ok_or_else(|| {
-            Diagnostic::new(span, "this drawing/input function only works inside a `game` block")
+            Diagnostic::new(
+                span,
+                "this drawing/input/sound function only works inside a `game` (or `window`) block",
+            )
         })
     }
 
@@ -2862,6 +3251,92 @@ impl Interpreter {
         }
     }
 
+    /// Serialize a value for `save(...)`: the JSON-shaped types plus class
+    /// instances, which are tagged with `~type` so `load` can rebuild them.
+    fn value_to_saved(&self, v: &Value, span: Span) -> Result<serde_json::Value, Diagnostic> {
+        use serde_json::Value as J;
+        Ok(match v {
+            Value::Number(n) => {
+                if n.fract() == 0.0 && n.is_finite() && n.abs() < 9.007e15 {
+                    J::Number((*n as i64).into())
+                } else if let Some(num) = serde_json::Number::from_f64(*n) {
+                    J::Number(num)
+                } else {
+                    return Err(Diagnostic::new(span, "that number can't be saved (not a finite value)"));
+                }
+            }
+            Value::Text(s) => J::String((**s).clone()),
+            Value::Bool(b) => J::Bool(*b),
+            Value::Nothing => J::Null,
+            Value::List(items) => {
+                let mut arr = Vec::new();
+                for it in items.borrow().iter() {
+                    arr.push(self.value_to_saved(it, span)?);
+                }
+                J::Array(arr)
+            }
+            Value::Dictionary(map) => {
+                let mut obj = serde_json::Map::new();
+                for (k, val) in map.borrow().entries.iter() {
+                    let key = match k {
+                        MapKey::Text(s) => s.clone(),
+                        MapKey::Number(n) => format_number(*n),
+                        MapKey::Bool(b) => if *b { "true".into() } else { "false".into() },
+                    };
+                    obj.insert(key, self.value_to_saved(val, span)?);
+                }
+                J::Object(obj)
+            }
+            Value::Class(inst) => {
+                let inst = inst.borrow();
+                let mut obj = serde_json::Map::new();
+                obj.insert("~type".into(), J::String(inst.def.name.clone()));
+                for f in &inst.def.fields {
+                    let val = inst.fields.get(&f.name).cloned().unwrap_or(Value::Nothing);
+                    obj.insert(f.name.clone(), self.value_to_saved(&val, span)?);
+                }
+                J::Object(obj)
+            }
+            other => {
+                return Err(Diagnostic::new(span, format!("can't save a {}", other.type_name()))
+                    .with_hint("save numbers, text, true/false, lists, dictionaries, or your own class values"));
+            }
+        })
+    }
+
+    /// Rebuild a value read by `load(...)` on the collected heap, reconstructing
+    /// any tagged class the program still defines (otherwise it's a dictionary).
+    fn saved_to_value(&mut self, j: &serde_json::Value) -> Value {
+        use serde_json::Value as J;
+        match j {
+            J::Null => Value::Nothing,
+            J::Bool(b) => Value::Bool(*b),
+            J::Number(n) => Value::Number(n.as_f64().unwrap_or(0.0)),
+            J::String(s) => Value::text(s.clone()),
+            J::Array(items) => {
+                let list: Vec<Value> = items.iter().map(|x| self.saved_to_value(x)).collect();
+                self.new_list(list)
+            }
+            J::Object(map) => {
+                if let Some(J::String(tname)) = map.get("~type") {
+                    if let Some(def) = self.classes.get(tname).cloned() {
+                        let mut fields = HashMap::new();
+                        for f in &def.fields {
+                            let val = map.get(&f.name).map(|x| self.saved_to_value(x)).unwrap_or(Value::Nothing);
+                            fields.insert(f.name.clone(), val);
+                        }
+                        return self.new_instance(ClassInstance { def, fields });
+                    }
+                }
+                let mut pt = PtMap::new();
+                for (k, v) in map.iter() {
+                    pt.set(MapKey::Text(k.clone()), self.saved_to_value(v));
+                }
+                self.new_dict(pt)
+            }
+        }
+    }
+
     fn expect_arity(&self, name: &str, args: &[Value], n: usize, span: Span) -> Result<(), Diagnostic> {
         if args.len() != n {
             Err(Diagnostic::new(
@@ -2935,6 +3410,7 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Body(x), Value::Body(y)) => Rc::ptr_eq(x, y),
         (Value::Hitbox(x), Value::Hitbox(y)) => Rc::ptr_eq(x, y),
         (Value::PhysicsWorld(x), Value::PhysicsWorld(y)) => Rc::ptr_eq(x, y),
+        (Value::Tilemap(x), Value::Tilemap(y)) => Rc::ptr_eq(x, y),
         (Value::WebModule, Value::WebModule) => true,
         _ => false,
     }
@@ -2987,5 +3463,55 @@ fn stmt_span(stmt: &Stmt) -> Span {
         Stmt::Game(g) => g.span,
         Stmt::Window(w) => w.span,
         Stmt::Expr(e) => e.span(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_load_round_trips_values() {
+        let mut interp = Interpreter::new();
+        // dictionary { "n": 7, "flag": true, "tags": ["a", "b"], "nada": nothing }
+        let mut m = PtMap::new();
+        m.set(MapKey::Text("n".into()), Value::Number(7.0));
+        m.set(MapKey::Text("flag".into()), Value::Bool(true));
+        let tags = Value::List(Rc::new(RefCell::new(vec![Value::text("a"), Value::text("b")])));
+        m.set(MapKey::Text("tags".into()), tags);
+        m.set(MapKey::Text("nada".into()), Value::Nothing);
+        let dict = Value::Dictionary(Rc::new(RefCell::new(m)));
+
+        let span = Span::new(0, 0);
+        let json = interp.value_to_saved(&dict, span).unwrap();
+        let text = serde_json::to_string(&json).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let back = interp.saved_to_value(&parsed);
+
+        match back {
+            Value::Dictionary(m) => {
+                let m = m.borrow();
+                assert!(matches!(m.get(&MapKey::Text("n".into())), Some(Value::Number(n)) if (n - 7.0).abs() < 1e-9));
+                assert!(matches!(m.get(&MapKey::Text("flag".into())), Some(Value::Bool(true))));
+                assert!(matches!(m.get(&MapKey::Text("nada".into())), Some(Value::Nothing)));
+                match m.get(&MapKey::Text("tags".into())) {
+                    Some(Value::List(l)) => {
+                        let l = l.borrow();
+                        assert_eq!(l.len(), 2);
+                        assert_eq!(l[0].display(), "a");
+                        assert_eq!(l[1].display(), "b");
+                    }
+                    other => panic!("tags round-tripped wrong: {:?}", other.map(|v| v.display())),
+                }
+            }
+            other => panic!("expected a dictionary, got {}", other.type_name()),
+        }
+    }
+
+    #[test]
+    fn cannot_save_a_function() {
+        let interp = Interpreter::new();
+        let builtin = Value::Builtin(crate::value::Builtin::Print);
+        assert!(interp.value_to_saved(&builtin, Span::new(0, 0)).is_err());
     }
 }

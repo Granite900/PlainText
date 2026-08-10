@@ -1,0 +1,102 @@
+// Tilemap levels + a tiny menu/play "scene" switch (a `screen` variable).
+// Arrows / A-D move, SPACE / W / UP jump. Esc returns to the menu.
+// Run with:  plaintext run examples/tilemap.pt
+// Edit the level in a GUI (rewrites this file):  plaintext edit_tilemap examples/tilemap.pt
+//
+// Drawing uses colored rectangles (no tileset image). In the editor you can drop
+// PNGs to assign a tile image per character; this example sticks to color drawing.
+
+import gamekit
+
+cell = 40
+level = tilemap(cell_size: cell, rows: [
+    "################",
+    "#..............#",
+    "#..............#",
+    "#...P..##......#",
+    "#..............#",
+    "#...######.....#",
+    "#..............#",
+    "################",
+])
+
+world = physics_world(gravity: 2200)
+hero = body(x: 0, y: 0, width: 28, height: 36, solid: true)
+world.add(hero)
+world.add_tilemap(level, solid_tiles: ["#"])
+
+screen = "menu"
+message = "Press SPACE to play"
+
+make function called find_spawn() {
+    row = 0
+    while row is less than level.height {
+        col = 0
+        while col is less than level.width {
+            if tile_at(level, col, row) is "P" {
+                return [col * cell + 6, row * cell + 2]
+            }
+            increase col by 1
+        }
+        increase row by 1
+    }
+    return [80, 80]
+}
+
+make function called start_play() {
+    spawn = find_spawn()
+    hero.x = spawn[0]
+    hero.y = spawn[1]
+    hero.set_velocity(0, 0)
+    screen = "play"
+    message = "Esc = menu"
+}
+
+game "Tilemap" (width: 640, height: 320) {
+    on update(delta) {
+        if screen is "menu" {
+            if pressed("jump") or key_pressed("enter") {
+                start_play()
+            }
+        } else if screen is "play" {
+            speed = 240
+            if key_down("left") or key_down("a") {
+                hero.vx = -speed
+            } else if key_down("right") or key_down("d") {
+                hero.vx = speed
+            } else {
+                hero.vx = 0
+            }
+            if pressed("jump") {
+                hero.jump(700)
+            }
+            world.step(delta)
+            if key_pressed("escape") {
+                screen = "menu"
+                message = "Press SPACE to play"
+            }
+            if hero.y is more than 400 {
+                start_play()
+            }
+        }
+    }
+
+    on draw() {
+        clear_screen(skyblue)
+        if screen is "menu" {
+            draw_text("Cave levels", 220, 100, 36, black)
+            draw_text(message, 200, 160, 22, darkgray)
+            draw_text("A tilemap is just text rows of characters", 120, 220, 18, black)
+        } else {
+            draw_tilemap(level, tile_colors: dictionary {
+                "#": gray,
+                ".": darkgray,
+                "P": green,
+            })
+            draw_body(hero, orange)
+            draw_text(message, 16, 12, 20, white)
+            under = tile_at(level, hero.x / cell, (hero.y + hero.height + 1) / cell)
+            draw_text("tile under feet: {under}", 16, 40, 18, white)
+        }
+    }
+}

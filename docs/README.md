@@ -33,9 +33,9 @@ About **70–100 minutes** if you try every exercise.
 | 7 | [Lists and dictionaries](learn/07-collections.md) | Collections and their methods |
 | 8 | [Math and the toolbox](learn/08-math-and-tools.md) | `import math`, `input`, `exit` |
 | 9 | [Modules](learn/09-modules.md) | Splitting a program across files |
-| 10 | [Games](learn/10-games.md) | `game`, update/draw, sprites, input |
-| 11 | [Desktop UI](learn/11-ui.md) | `window`, buttons, forms (`text_field` / `checkbox` / `slider`) |
-| 12 | [Game kit](learn/12-game-kit.md) | `import gamekit` — gravity, bodies, hitboxes |
+| 10 | [Games](learn/10-games.md) | `game`, update/draw, sprites, input, sound & music |
+| 11 | [Desktop UI](learn/11-ui.md) | `window`, buttons, forms, scroll / list / dropdown |
+| 12 | [Game kit](learn/12-game-kit.md) | `import gamekit` — gravity, bodies, hitboxes, tilemaps |
 | 13 | [Neural networks](learn/13-neural-networks.md) | `import ai`, train / predict, datasets, GPU, neuroevolution |
 | 14 | [Talking to the web](learn/14-web.md) | `import web` — HTTP, JSON, offline fixtures |
 

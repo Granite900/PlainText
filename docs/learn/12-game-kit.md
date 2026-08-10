@@ -60,6 +60,65 @@ draw_hitbox(attack, orange)
 draw_hitboxes(world)        // outlines every active hitbox (debug)
 ```
 
+## Tilemaps
+
+A level can be a grid of characters — easy to sketch in your `.pt` file:
+
+```plaintext
+level = tilemap(cell_size: 40, rows: [
+    "##########",
+    "#........#",
+    "#..P.....#",
+    "#....##..#",
+    "##########",
+])
+
+world.add_tilemap(level, solid_tiles: ["#"])   // '#' blocks solid bodies
+```
+
+- `tile_at(level, col, row)` (or `level.tile_at(col, row)`) returns that character, or
+  `nothing` if you ask outside the map. Columns and rows are integers from the top-left.
+- Fields: `cell_size`, `width` (columns), `height` (rows).
+- Draw with colors (no image needed):  
+  `draw_tilemap(level, tile_colors: dictionary { "#": gray, ".": darkgray, "P": green })`  
+  Characters missing from the dictionary are skipped.
+- You can also put `solid_tiles: ["#"]` on `tilemap(...)` itself, then `world.add(level)`.
+
+Solid tiles collide the same way static bodies do: land on floors, bump into walls.
+
+### Scenes (menu ↔ play) without a framework
+
+A “scene” is just which update/draw code runs. Keep a text variable and branch:
+
+```plaintext
+screen = "menu"
+
+// in on update(delta):
+if screen is "menu" {
+    if pressed("jump") { screen = "play" /* reset hero, etc. */ }
+} else if screen is "play" {
+    world.step(delta)
+    if key_pressed("escape") { screen = "menu" }
+}
+```
+
+No scene graph or state machine is built in — this pattern is enough for a menu and a level.
+
+### Painting a level (`plaintext edit_tilemap`)
+
+```bash
+plaintext edit_tilemap examples/tilemap.pt
+```
+
+Opens a window where you paint the map, toggle solids (**S**), and drop a **PNG** onto the
+window to assign it to the selected character. **Save** rewrites the `.pt` file in place:
+
+- updates that map’s `rows` (and `solid_tiles`, wherever they already live)
+- creates/updates a nearby `level_tiles = dictionary { "#": "path.png", ... }`  
+  (name is `<map>_tiles`)
+
+It does **not** edit `body` / `hitbox` literals yet. First save also writes `file.pt.bak`.
+
 ## Input helper
 
 `pressed("jump")` is like `key_pressed`, with friendly aliases (`jump` → space/up/w,
@@ -70,9 +129,11 @@ draw_hitboxes(world)        // outlines every active hitbox (debug)
 | Example | Idea |
 |---------|------|
 | [`platformer.pt`](../../examples/platformer.pt) | Run, jump, stomp / attack — hold **H** to outline hitboxes |
+| [`tilemap.pt`](../../examples/tilemap.pt) | Text-row level, solid tiles, menu/play `screen` switch |
 
 ```bash
 plaintext run examples/platformer.pt
+plaintext run examples/tilemap.pt
 ```
 
 ## Common mistakes
@@ -80,12 +141,16 @@ plaintext run examples/platformer.pt
 | Mistake | Fix |
 |---------|-----|
 | `physics_world` needs gamekit | Add `import gamekit` |
-| Character falls through the floor | Make the floor `solid: true, static: true` and `world.add` both bodies |
+| Character falls through the floor | Make the floor `solid: true, static: true` and `world.add` both bodies — or use a tilemap with `solid_tiles` |
 | Attack hits every frame | Use `world.hits`, not bare `overlaps`, for swings |
 | Forgetting `world.step(delta)` | Nothing moves without it |
+| Tilemap has no collision | Call `world.add_tilemap(map, solid_tiles: ["#"])` (or set `solid_tiles` on the map) |
 
 ## Out of scope (for now)
 
-No slopes, rotation, joints, or a full physics engine — axis-aligned boxes only.
+No slopes, rotation, joints, tile animation, or sprite-sheet tile drawing — axis-aligned boxes
+and solid character tiles only. The `edit_tilemap` painter covers tile layout and per-character
+PNG assignment, but not `body`/`hitbox` placement. Color `draw_tilemap` is the debug/teachable
+path; image tilesets can come later.
 
 **Previous:** [Desktop UI ←](11-ui.md) · **Next:** [Neural networks →](13-neural-networks.md)

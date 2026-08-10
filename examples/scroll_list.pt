@@ -1,0 +1,44 @@
+// Scroll + list + dropdown + multiline text_field in one small tool.
+// Pick a category, choose a to-do from the list, edit notes, scroll the form.
+// Tab / Shift+Tab moves focus. Run with:  plaintext run examples/scroll_list.pt
+//
+// (Needs a real window — CI can only `plaintext check` this file.)
+
+categories = ["Home", "School", "Games"]
+picked_category = 0
+
+todos = [
+    "Feed the cat",
+    "Finish homework",
+    "Practice PlainText",
+    "Clean desk",
+    "Call a friend",
+    "Read lesson 11",
+    "Stretch break",
+]
+picked_todo = 0
+
+notes = "Write a few lines here.\nUse Tab to jump between widgets."
+
+window "To-do picker" (width: 480, height: 560, bg: white) {
+    scroll (height: 520, width: 420, padding: 20, spacing: 12) {
+        text "Scrollable to-do tool" (size: 24)
+
+        text "Category"
+        dropdown (items: categories, bind: picked_category, width: 360)
+
+        text "Tasks"
+        list (items: todos, bind: picked_todo, width: 360, height: 160)
+
+        text "Notes"
+        text_field (bind: notes, multiline: true, width: 360, height: 120)
+
+        text "Category #{picked_category}: {categories[picked_category]}"
+        text "Task #{picked_todo}: {todos[picked_todo]}"
+
+        spacer (height: 40)
+        text "(scroll for more · mouse wheel · Tab focuses)" (size: 16, color: gray)
+        spacer (height: 200)
+        text "End of the scroll area" (size: 16, color: darkgray)
+    }
+}

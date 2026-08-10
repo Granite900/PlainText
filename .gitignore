@@ -11,6 +11,9 @@ smoke_err.txt
 smoke_out.txt
 *.pdb
 *.ai
+*.save
+*.save.tmp
+*.pt.bak
 /dist-smoke/
 
 # Editor / OS

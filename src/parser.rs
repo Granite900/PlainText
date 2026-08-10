@@ -404,7 +404,23 @@ impl Parser {
     /// `name [ "label" ] [ (props) ] [ { children } ]`
     fn parse_widget(&mut self) -> Result<Widget, Diagnostic> {
         let span = self.peek_span();
-        let name = self.parse_ident("a widget name like `column`, `text`, or `button`")?;
+        // Widget names are usually identifiers; `list` is also a keyword, so
+        // accept keyword tokens here too (same idea as `.list` member names).
+        let name = if let TokenKind::Ident(n) = self.peek().clone() {
+            self.advance();
+            n
+        } else if let Some(word) = keyword_word(self.peek()) {
+            self.advance();
+            word.to_string()
+        } else {
+            return Err(Diagnostic::new(
+                span,
+                format!(
+                    "expected a widget name like `column`, `text`, or `list`, found {}",
+                    describe(self.peek())
+                ),
+            ));
+        };
 
         let label = if let TokenKind::Text(parts) = self.peek().clone() {
             self.advance();
@@ -856,13 +872,18 @@ impl Parser {
     }
 
     /// A `name:` at the current position (an argument label), without consuming.
+    /// Keywords are allowed as labels too (`play_sound(beep, loop: true)`),
+    /// matching how they can appear as member names after `.`.
     fn peek_keyword_arg(&self) -> Option<(String, Span)> {
-        if let TokenKind::Ident(name) = self.peek() {
-            if matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Colon)) {
-                return Some((name.clone(), self.peek_span()));
-            }
+        let colon_next =
+            matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Colon));
+        if !colon_next {
+            return None;
         }
-        None
+        match self.peek() {
+            TokenKind::Ident(name) => Some((name.clone(), self.peek_span())),
+            other => keyword_word(other).map(|word| (word.to_string(), self.peek_span())),
+        }
     }
 
     /// Run `f` with class-literals re-enabled (used inside `(...)` and `[...]`).

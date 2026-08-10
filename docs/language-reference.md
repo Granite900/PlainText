@@ -521,8 +521,8 @@ Also: `sprite_width(sprite)`, `sprite_height(sprite)`.
 you run `plaintext` from**, not the folder the `.pt` file is in. A common tidy layout is an
 `assets/` folder next to your program, loaded as `load_sprite("assets/ship.png")` and run from
 that program's folder. PNG works everywhere; if a sprite doesn't appear, a wrong path is the
-usual cause. The same rule applies to `load_sound` and `load_font`. Supported: `.png` images,
-`.wav`/`.ogg` sounds, `.ttf` fonts.
+usual cause. The same rule applies to `load_sound`, `load_music`, and `load_font`. Supported:
+`.png` images, `.wav`/`.ogg` audio, `.ttf` fonts.
 
 ### Input
 
@@ -531,12 +531,32 @@ usual cause. The same rule applies to `load_sound` and `load_font`. Supported: `
 - `mouse_x()`, `mouse_y()`, `mouse_down()`, `mouse_pressed()`.
 - `screen_width()`, `screen_height()`.
 
-### Sound
+### Sound & music
+
+Sound ids and music ids are **separate** (a `0` from `load_sound` is not the same as a `0` from
+`load_music`). Use the matching `set_sound_*` / `set_music_*` helpers.
 
 ```plaintext
 beep = load_sound("beep.wav")
-play_sound(beep)
+tune = load_music("theme.ogg")
+
+play_sound(beep)                 // one-shot
+play_sound(beep, loop: true)     // keep restarting until stop_sound
+stop_sound(beep)
+set_sound_volume(beep, 0.8)      // 0..1
+set_sound_pitch(beep, 1.2)       // 1 = normal
+set_sound_pan(beep, 0.0)         // 0 = left, 0.5 = center, 1 = right
+
+play_music(tune)                 // streamed; loops by default
+set_music_volume(tune, 0.5)
+set_music_pitch(tune, 1.0)
+set_music_pan(tune, 0.5)
+fade_music(tune, 0, 2)           // fade to volume 0 over 2 seconds
+stop_music(tune)
 ```
+
+These only work inside a `game` block (same as drawing). If the audio device can't open, loads
+and plays become harmless no-ops rather than crashing. See [`examples/audio.pt`](../examples/audio.pt).
 
 ---
 
@@ -567,13 +587,20 @@ window "Counter" (width: 420, height: 260, bg: rgb(24, 28, 40)) {
 
 - `column { ... }` — stacks children top to bottom.
 - `row { ... }` — places children left to right.
+- `scroll { ... }` — like a column, but clipped to `height` / `width` and mouse-wheel scrollable.
 - `text "..."` — a label (interpolation works).
 - `button "..."` — clickable; give it `on_click: <a function>`.
 - `spacer` — empty space (`width` / `height`).
 - `text_field` — a typeable box; bind a `Text` variable or use `on_change`.
+  Add `multiline: true` for wrapped lines, Enter for newlines, and Up/Down caret movement.
 - `checkbox "..."` — on/off; bind a `Boolean` or use `on_change`.
 - `slider` — a number in a range (`min`, `max`, `step`); bind a `Number` or use `on_change`.
+- `list` — scrollable text rows from `items:` (a Text list); bind a selected **index** (Number).
+- `dropdown` — closed by default; opens a list popup on click (same `items:` / index bind).
 - `image` — shows a sprite from `load_sprite` (`sprite:`, optional `width` / `height`).
+
+**Focus.** Click an input, or use **Tab** / **Shift+Tab** to move between text fields, lists,
+dropdowns, checkboxes, and sliders.
 
 ### Binding and `on_change`
 
@@ -612,10 +639,12 @@ Written in parentheses as `name: value`:
 - `font` — a font from `load_font("path.ttf")`.
 - `sprite` — a sprite from `load_sprite("path.png")` (button face or `image`).
 - `on_click` — for buttons, a function to run.
-- `bind` — variable name to read/write (`text_field`, `checkbox`, `slider`).
+- `bind` — variable name to read/write (`text_field`, `checkbox`, `slider`, `list`, `dropdown`).
 - `on_change` — function `(new_value)` when an input changes.
 - `value` / `checked` — set the current value without binding (pair with `on_change`).
 - `min`, `max`, `step` — slider range and snap.
+- `items` — Text list of choices for `list` / `dropdown`.
+- `multiline` — `true` for a multi-line `text_field`.
 
 The window itself also accepts `bg` / `background` for the clear color:
 
@@ -630,7 +659,12 @@ window "Demo" (width: 480, height: 300, bg: rgb(24, 28, 40)) {
 
 ```
 
-See [`examples/form.pt`](../examples/form.pt) for a complete settings form.
+See [`examples/form.pt`](../examples/form.pt) for a settings form, and
+[`examples/scroll_list.pt`](../examples/scroll_list.pt) for scroll + list + dropdown +
+multiline notes.
+
+Menu bars and tab strips are not built in yet — scroll/list/dropdown/multiline cover the
+common “more than fits on screen” cases.
 
 ---
 
@@ -654,6 +688,27 @@ Everything else below is always available — no import needed.
 
 **Files**: `read_file(path)`, `write_file(path, text)`, `append_file(path, text)`,
 `file_exists(path)`.
+
+**Saving progress**: `save(value, path)` writes any value — a number, text, boolean, list,
+dictionary, or one of your own **class** values — to a file, and `load(path)` reads it back.
+A missing file loads as `nothing`, so pair it with `otherwise` to start fresh on the first run.
+`has_save(path)` tells you whether a save exists yet.
+
+```plaintext
+class Progress {
+    best = 0
+    runs = 0
+}
+
+progress = load("game.save") otherwise Progress { }   // fresh start the first time
+increase progress.runs by 1
+save(progress, "game.save")                            // written atomically
+```
+
+A class value comes back as a **real instance** — fields, methods, and all — because `save`
+tags it with its type. Writes are atomic (a crash mid-save can't corrupt the file), and only the
+data types above can be saved (a function or neural network can't). See
+[`examples/save.pt`](../examples/save.pt).
 
 **Data files**: `read_csv(path)` reads a file of comma- or space-separated numbers into a list
 of rows (a one-line header of names is skipped automatically, and `#` lines are ignored).
@@ -720,8 +775,8 @@ can't itself contain a `game` or `window` block.)
 
 ## 14. Game kit (the `gamekit` module)
 
-Put `import gamekit` at the top for gravity, solid bodies, and tagged hitboxes. Units are
-pixels and seconds. Collision is axis-aligned boxes only (no slopes or rotation).
+Put `import gamekit` at the top for gravity, solid bodies, tagged hitboxes, and tilemaps.
+Units are pixels and seconds. Collision is axis-aligned boxes only (no slopes or rotation).
 
 ```plaintext
 import gamekit
@@ -745,12 +800,41 @@ if pressed("jump") { hero.jump(700) }
 `kind` is text (`"hurt"`, `"attack"`, …). Methods: `overlaps(other)`. World helpers:
 `world.hits(attack, hurt)` (once per swing), free function `overlaps(a, b)`.
 
-**Drawing.** `draw_body(body, color)`, `draw_hitbox(hitbox, color)`, `draw_hitboxes(world)`.
+**Tilemaps.** Hand-author levels as text rows:
+
+```plaintext
+level = tilemap(cell_size: 32, rows: [
+    "######",
+    "#..P.#",
+    "######",
+])
+world.add_tilemap(level, solid_tiles: ["#"])
+ch = tile_at(level, 2, 1)          // "P", or nothing if out of range
+draw_tilemap(level, tile_colors: dictionary { "#": gray, ".": darkgray })
+```
+
+Fields: `cell_size`, `width`, `height`. Method: `tile_at(col, row)`. Optional
+`solid_tiles:` on `tilemap(...)` lets you `world.add(level)` instead.
+`draw_tilemap` fills each known character with a solid color (sprite-sheet tiles are out of
+scope for now).
+
+**Scenes.** There is no scene-graph API. Switch screens with a variable
+(`screen = "menu"` / `"play"`) and `if` branches inside `on update` / `on draw` — see
+[`examples/tilemap.pt`](../examples/tilemap.pt).
+
+**Editor.** `plaintext edit_tilemap <file.pt>` opens a paint window that rewrites that file’s
+`tilemap` rows / solids and a nearby `<name>_tiles` dictionary (one PNG path per character).
+It does not edit bodies or hitboxes.
+
+**Drawing.** `draw_body(body, color)`, `draw_hitbox(hitbox, color)`, `draw_hitboxes(world)`,
+`draw_tilemap(map, tile_colors: …)`.
 
 **Input.** `pressed("jump")` — edge-trigger with aliases (`jump` → space/up/w).
 
-See [`examples/platformer.pt`](../examples/platformer.pt) (hold **H** to outline hitboxes)
-and [lesson 12](learn/12-game-kit.md).
+**Out of scope.** Slopes, tile animation, a level editor, image tilesets.
+
+See [`examples/platformer.pt`](../examples/platformer.pt) (hold **H** to outline hitboxes),
+[`examples/tilemap.pt`](../examples/tilemap.pt), and [lesson 12](learn/12-game-kit.md).
 
 ---
 

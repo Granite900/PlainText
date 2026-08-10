@@ -34,6 +34,7 @@ pub enum Value {
     Body(Rc<RefCell<crate::gamekit::Body>>),
     Hitbox(Rc<RefCell<crate::gamekit::Hitbox>>),
     PhysicsWorld(Rc<RefCell<crate::gamekit::World>>),
+    Tilemap(Rc<RefCell<crate::gamekit::Tilemap>>),
     /// The `web` helper from `import web` (`web.get`, `web.get_json`, …).
     WebModule,
     Function(Rc<FunctionObj>),
@@ -93,6 +94,10 @@ pub enum Builtin {
     FileExists,
     ReadCsv,
     LoadDataset,
+    // Saved data (structured save/load)
+    Save,
+    Load,
+    HasSave,
     // Time
     Now,
     Clock,
@@ -113,7 +118,7 @@ pub enum Builtin {
     MouseY,
     MouseDown,
     MousePressed,
-    // Sprites & sound
+    // Sprites & sound / music
     LoadSprite,
     DrawSprite,
     DrawSpriteScaled,
@@ -122,6 +127,17 @@ pub enum Builtin {
     SpriteHeight,
     LoadSound,
     PlaySound,
+    StopSound,
+    SetSoundVolume,
+    SetSoundPitch,
+    SetSoundPan,
+    LoadMusic,
+    PlayMusic,
+    StopMusic,
+    SetMusicVolume,
+    SetMusicPitch,
+    SetMusicPan,
+    FadeMusic,
     LoadFont,
     // Timers
     After,
@@ -141,6 +157,9 @@ pub enum Builtin {
     DrawBody,
     DrawHitbox,
     DrawHitboxes,
+    Tilemap,
+    TileAt,
+    DrawTilemap,
     // Web (only usable after `import web`)
     WebGetJson,
     WebPostJson,
@@ -176,6 +195,9 @@ impl Builtin {
             Builtin::FileExists => "file_exists",
             Builtin::ReadCsv => "read_csv",
             Builtin::LoadDataset => "load_dataset",
+            Builtin::Save => "save",
+            Builtin::Load => "load",
+            Builtin::HasSave => "has_save",
             Builtin::Now => "now",
             Builtin::Clock => "clock",
             Builtin::ClearScreen => "clear_screen",
@@ -201,6 +223,17 @@ impl Builtin {
             Builtin::SpriteHeight => "sprite_height",
             Builtin::LoadSound => "load_sound",
             Builtin::PlaySound => "play_sound",
+            Builtin::StopSound => "stop_sound",
+            Builtin::SetSoundVolume => "set_sound_volume",
+            Builtin::SetSoundPitch => "set_sound_pitch",
+            Builtin::SetSoundPan => "set_sound_pan",
+            Builtin::LoadMusic => "load_music",
+            Builtin::PlayMusic => "play_music",
+            Builtin::StopMusic => "stop_music",
+            Builtin::SetMusicVolume => "set_music_volume",
+            Builtin::SetMusicPitch => "set_music_pitch",
+            Builtin::SetMusicPan => "set_music_pan",
+            Builtin::FadeMusic => "fade_music",
             Builtin::LoadFont => "load_font",
             Builtin::After => "after",
             Builtin::Every => "every",
@@ -217,6 +250,9 @@ impl Builtin {
             Builtin::DrawBody => "draw_body",
             Builtin::DrawHitbox => "draw_hitbox",
             Builtin::DrawHitboxes => "draw_hitboxes",
+            Builtin::Tilemap => "tilemap",
+            Builtin::TileAt => "tile_at",
+            Builtin::DrawTilemap => "draw_tilemap",
             Builtin::WebGetJson => "get_json",
             Builtin::WebPostJson => "post_json",
             Builtin::ParseJson => "parse_json",
@@ -244,6 +280,9 @@ impl Builtin {
                 | Builtin::DrawBody
                 | Builtin::DrawHitbox
                 | Builtin::DrawHitboxes
+                | Builtin::Tilemap
+                | Builtin::TileAt
+                | Builtin::DrawTilemap
         )
     }
 
@@ -293,6 +332,9 @@ impl Builtin {
             "file_exists" => Builtin::FileExists,
             "read_csv" => Builtin::ReadCsv,
             "load_dataset" => Builtin::LoadDataset,
+            "save" => Builtin::Save,
+            "load" => Builtin::Load,
+            "has_save" => Builtin::HasSave,
             "now" => Builtin::Now,
             "clock" => Builtin::Clock,
             "clear_screen" => Builtin::ClearScreen,
@@ -318,6 +360,17 @@ impl Builtin {
             "sprite_height" => Builtin::SpriteHeight,
             "load_sound" => Builtin::LoadSound,
             "play_sound" => Builtin::PlaySound,
+            "stop_sound" => Builtin::StopSound,
+            "set_sound_volume" => Builtin::SetSoundVolume,
+            "set_sound_pitch" => Builtin::SetSoundPitch,
+            "set_sound_pan" => Builtin::SetSoundPan,
+            "load_music" => Builtin::LoadMusic,
+            "play_music" => Builtin::PlayMusic,
+            "stop_music" => Builtin::StopMusic,
+            "set_music_volume" => Builtin::SetMusicVolume,
+            "set_music_pitch" => Builtin::SetMusicPitch,
+            "set_music_pan" => Builtin::SetMusicPan,
+            "fade_music" => Builtin::FadeMusic,
             "load_font" => Builtin::LoadFont,
             "after" => Builtin::After,
             "every" => Builtin::Every,
@@ -334,6 +387,9 @@ impl Builtin {
             "draw_body" => Builtin::DrawBody,
             "draw_hitbox" => Builtin::DrawHitbox,
             "draw_hitboxes" => Builtin::DrawHitboxes,
+            "tilemap" => Builtin::Tilemap,
+            "tile_at" => Builtin::TileAt,
+            "draw_tilemap" => Builtin::DrawTilemap,
             "get_json" => Builtin::WebGetJson,
             "post_json" => Builtin::WebPostJson,
             "parse_json" => Builtin::ParseJson,
@@ -367,6 +423,7 @@ impl Value {
             Value::Body(_) => "body",
             Value::Hitbox(_) => "hitbox",
             Value::PhysicsWorld(_) => "physics world",
+            Value::Tilemap(_) => "tilemap",
             Value::WebModule => "web",
             Value::Function(_) | Value::BoundMethod { .. } | Value::Builtin(_) => "function",
         }
@@ -420,6 +477,15 @@ impl Value {
             Value::PhysicsWorld(w) => {
                 let w = w.borrow();
                 format!("<physics world gravity={}>", format_number(w.gravity))
+            }
+            Value::Tilemap(m) => {
+                let m = m.borrow();
+                format!(
+                    "<tilemap {}x{} cell={}>",
+                    m.width(),
+                    m.height(),
+                    format_number(m.cell_size)
+                )
             }
             Value::WebModule => "<web>".into(),
             Value::Function(f) => format!("<function {}>", f.decl.name),

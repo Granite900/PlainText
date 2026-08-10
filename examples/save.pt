@@ -1,0 +1,30 @@
+// Saving and loading progress. Run it a few times — it remembers your best
+// score and how many times you've played, across separate runs.
+//   plaintext run examples/save.pt
+
+import math
+
+class Progress {
+    best = 0
+    runs = 0
+}
+
+// `load` gives back `nothing` the first time (no save yet), so `otherwise`
+// supplies a fresh Progress to start from.
+progress = load("examples/highscore.save") otherwise Progress { }
+
+this_run = floor(random_between(1, 101))
+print("You scored {this_run} this run.")
+
+increase progress.runs by 1
+if this_run is more than progress.best {
+    print("New best! (the old best was {progress.best})")
+    progress.best = this_run
+} else {
+    print("Your best is still {progress.best}.")
+}
+
+// `save` writes it back atomically. `progress` is a Progress, so it comes back as a
+// real Progress next time — methods and fields and all.
+save(progress, "examples/highscore.save")
+print("You've played {progress.runs} time(s) in total.")

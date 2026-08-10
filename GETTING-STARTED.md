@@ -140,6 +140,7 @@ Useful commands:
 |---------|----------------|
 | `plaintext run file.pt` | Type-check and run |
 | `plaintext check file.pt` | Type-check only |
+| `plaintext edit_tilemap file.pt` | Paint a tilemap (rewrites the file) |
 | `plaintext lsp` | Language server for editors (stdio) |
 | `plaintext repl` | Interactive prompt |
 | `plaintext new name` | Scaffold a project folder |

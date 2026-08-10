@@ -6,6 +6,7 @@
 //!   plaintext build <file.pt>   bundle into a standalone executable
 //!   plaintext repl              start an interactive session
 //!   plaintext lsp               language server (stdio) for editors
+//!   plaintext edit_tilemap <file.pt>   paint a tilemap and rewrite the file
 //!   plaintext new <name>        scaffold a new project folder
 //!   plaintext version           print the version
 //!
@@ -27,6 +28,8 @@ mod load;
 mod lsp;
 mod nn;
 mod parser;
+mod tilemap_edit_source;
+mod tilemap_editor;
 mod token;
 mod ui;
 mod value;
@@ -78,6 +81,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("new") => cmd_new(args.get(1)),
+        Some("edit_tilemap") => cmd_edit_tilemap(args.get(1)),
         Some("version") | Some("--version") | Some("-v") => {
             println!("plaintext {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
@@ -103,9 +107,27 @@ fn print_usage() {
          plaintext build <file.pt>   Bundle into a standalone app (-o, --runtime, --run)\n  \
          plaintext repl              Start an interactive session\n  \
          plaintext lsp               Language server for editors (stdio)\n  \
+         plaintext edit_tilemap <file.pt>  Paint a tilemap (rewrites the file)\n  \
          plaintext new <name>        Create a new project folder\n  \
          plaintext version           Print the version"
     );
+}
+
+fn cmd_edit_tilemap(path: Option<&String>) -> ExitCode {
+    let path = match path {
+        Some(p) => p.clone(),
+        None => {
+            eprintln!("Usage: plaintext edit_tilemap <file.pt>");
+            return ExitCode::FAILURE;
+        }
+    };
+    match tilemap_editor::run(Path::new(&path)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(msg) => {
+            eprintln!("{}", msg);
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Turn a run result into an exit code: a real error prints and fails; an

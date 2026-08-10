@@ -162,6 +162,8 @@ pub struct Control {
     pub max: f32,
     pub step: f32,
     pub text: String,
+    /// Text field font size, so the runner can map a click x to a caret index.
+    pub font_size: i32,
 }
 
 /// Approximate width of a string in Raylib's default font at `size`. Raylib
@@ -286,18 +288,25 @@ fn position(node: &mut UiNode, x: f32, y: f32) {
     }
 }
 
+/// How many characters fit across a text field of pixel width `w`.
+pub fn field_capacity(w: f32, font_size: i32) -> usize {
+    ((w - 16.0) / (font_size as f32 * 0.5)).floor().max(1.0) as usize
+}
+
 /// Walk the laid-out tree, emitting draw commands and collecting interactive
 /// controls. `focused` is the index (into `controls`) of the text field that
-/// currently has keyboard focus, so it can be drawn with a caret.
+/// currently has keyboard focus, and `caret` is its caret position (a character
+/// index), so the field can be drawn scrolled to show the caret.
 pub fn collect(
     roots: &[UiNode],
     mouse: (f32, f32),
     focused: Option<usize>,
+    caret: usize,
     out: &mut Vec<DrawCmd>,
     controls: &mut Vec<Control>,
 ) {
     for n in roots {
-        draw_node(n, mouse, focused, out, controls);
+        draw_node(n, mouse, focused, caret, out, controls);
     }
 }
 
@@ -305,6 +314,7 @@ fn draw_node(
     node: &UiNode,
     mouse: (f32, f32),
     focused: Option<usize>,
+    caret: usize,
     out: &mut Vec<DrawCmd>,
     controls: &mut Vec<Control>,
 ) {
@@ -319,20 +329,24 @@ fn draw_node(
                 x: node.x + 2.0, y: node.y + 2.0, w: node.w - 4.0, h: node.h - 4.0, color: FIELD_BG,
             });
             let t = node.text.clone().unwrap_or_default();
-            // Keep the visible string inside the field so long input doesn't spill.
-            let max_chars = ((node.w - 16.0) / (node.props.font_size as f32 * 0.5)).floor().max(0.0) as usize;
-            let shown = if t.chars().count() > max_chars {
-                t.chars().skip(t.chars().count() - max_chars).collect::<String>()
-            } else {
-                t.clone()
-            };
-            let ty = node.y + (node.h - node.props.font_size as f32) / 2.0;
+            let chars: Vec<char> = t.chars().collect();
+            let len = chars.len();
+            let fs = node.props.font_size;
+            let max_chars = field_capacity(node.w, fs);
+            let pos = caret.min(len);
+            // Scroll horizontally so the caret stays inside the field. Unfocused
+            // fields just show from the start.
+            let start = if is_focused && pos > max_chars { pos - max_chars } else { 0 };
+            let end = (start + max_chars).min(len);
+            let shown: String = chars[start..end].iter().collect();
+            let ty = node.y + (node.h - fs as f32) / 2.0;
             out.push(DrawCmd::Text {
-                text: shown.clone(), x: node.x + 8.0, y: ty, size: node.props.font_size,
+                text: shown, x: node.x + 8.0, y: ty, size: fs,
                 color: node.props.color.unwrap_or(TEXT_COLOR), font: node.font,
             });
             if is_focused {
-                let caret_x = node.x + 8.0 + text_width(&shown, node.props.font_size) + 1.0;
+                let before: String = chars[start..pos].iter().collect();
+                let caret_x = node.x + 8.0 + text_width(&before, fs) + 1.0;
                 out.push(DrawCmd::Line {
                     x1: caret_x, y1: node.y + 6.0, x2: caret_x, y2: node.y + node.h - 6.0,
                     thick: 1.5, color: TEXT_COLOR,
@@ -342,6 +356,7 @@ fn draw_node(
                 x: node.x, y: node.y, w: node.w, h: node.h, kind: ControlKind::TextField,
                 callback: node.on_change.clone(), bind: node.bind.clone(),
                 checked: false, number: 0.0, min: 0.0, max: 0.0, step: 0.0, text: t,
+                font_size: fs,
             });
         }
         UiKind::Checkbox => {
@@ -367,6 +382,7 @@ fn draw_node(
                 x: node.x, y: node.y, w: node.w, h: node.h, kind: ControlKind::Checkbox,
                 callback: node.on_change.clone(), bind: node.bind.clone(),
                 checked: node.checked, number: 0.0, min: 0.0, max: 0.0, step: 0.0, text: String::new(),
+                font_size: node.props.font_size,
             });
         }
         UiKind::Slider => {
@@ -382,7 +398,7 @@ fn draw_node(
                 x: node.x, y: node.y, w: node.w, h: node.h, kind: ControlKind::Slider,
                 callback: node.on_change.clone(), bind: node.bind.clone(),
                 checked: false, number: node.number, min: node.min, max: node.max,
-                step: node.step, text: String::new(),
+                step: node.step, text: String::new(), font_size: node.props.font_size,
             });
         }
         UiKind::Image => {
@@ -441,7 +457,7 @@ fn draw_node(
                 controls.push(Control {
                     x: node.x, y: node.y, w: node.w, h: node.h, kind: ControlKind::Button,
                     callback: Some(cb.clone()), bind: None, checked: false, number: 0.0,
-                    min: 0.0, max: 0.0, step: 0.0, text: String::new(),
+                    min: 0.0, max: 0.0, step: 0.0, text: String::new(), font_size: node.props.font_size,
                 });
             }
         }
@@ -451,7 +467,7 @@ fn draw_node(
                 out.push(DrawCmd::Rect { x: node.x, y: node.y, w: node.w, h: node.h, color: bg });
             }
             for child in &node.children {
-                draw_node(child, mouse, focused, out, controls);
+                draw_node(child, mouse, focused, caret, out, controls);
             }
         }
     }

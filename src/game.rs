@@ -162,6 +162,8 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
     // widget tree keeps the same shape.
     let mut focused: Option<usize> = None;
     let mut dragging: Option<usize> = None;
+    // Caret position (a character index) within the focused text field.
+    let mut caret: usize = 0;
 
     while !rl.window_should_close() {
         sync_input(&mut bridge.borrow_mut(), &rl);
@@ -173,8 +175,24 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
         while let Some(ch) = rl.get_char_pressed() {
             typed.push(ch);
         }
-        let backspace = rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE)
-            || rl.is_key_pressed_repeat(KeyboardKey::KEY_BACKSPACE);
+        // Editing keys for the focused field. Movement/delete keys auto-repeat
+        // when held; Ctrl+V pastes.
+        let ctrl = rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL)
+            || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL);
+        let edit = TextEdit {
+            backspace: key_repeat(&rl, KeyboardKey::KEY_BACKSPACE),
+            delete: key_repeat(&rl, KeyboardKey::KEY_DELETE),
+            left: key_repeat(&rl, KeyboardKey::KEY_LEFT),
+            right: key_repeat(&rl, KeyboardKey::KEY_RIGHT),
+            home: rl.is_key_pressed(KeyboardKey::KEY_HOME),
+            end: rl.is_key_pressed(KeyboardKey::KEY_END),
+            paste: ctrl && rl.is_key_pressed(KeyboardKey::KEY_V),
+            clipboard: rl.get_clipboard_text().unwrap_or_default(),
+        };
+        // A Ctrl chord isn't text — don't also insert the raw letter.
+        if ctrl {
+            typed.clear();
+        }
 
         let (mouse, pressed, down) = {
             let b = bridge.borrow();
@@ -187,7 +205,7 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
         ui::layout_root(&mut nodes, width, height);
         let mut cmds = Vec::new();
         let mut controls = Vec::new();
-        ui::collect(&nodes, mouse, focused, &mut cmds, &mut controls);
+        ui::collect(&nodes, mouse, focused, caret, &mut cmds, &mut controls);
 
         if !down {
             dragging = None;
@@ -211,7 +229,10 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
                             interp.call_callback(&cb)?;
                         }
                     }
-                    ui::ControlKind::TextField => focused = Some(i),
+                    ui::ControlKind::TextField => {
+                        focused = Some(i);
+                        caret = caret_from_x(&controls[i], mouse.0);
+                    }
                     ui::ControlKind::Checkbox => {
                         let new_val = !controls[i].checked;
                         write_back(&mut interp, &scope, &controls[i], Value::Bool(new_val))?;
@@ -241,16 +262,54 @@ pub fn run_window(program: &Program, window: &WindowDecl) -> Result<(), Diagnost
             }
         }
 
-        // Feed typed text / backspace to the focused field.
+        // Edit the focused field: caret movement, insert/delete at the caret,
+        // and paste. Only a real content change is written back.
         if let Some(i) = focused {
             if let Some(c) = controls.get(i) {
-                if c.kind == ui::ControlKind::TextField && (!typed.is_empty() || backspace) {
-                    let mut s = c.text.clone();
-                    if backspace {
-                        s.pop();
+                if c.kind == ui::ControlKind::TextField {
+                    let mut chars: Vec<char> = c.text.chars().collect();
+                    let mut pos = caret.min(chars.len());
+                    let mut changed = false;
+
+                    if edit.left {
+                        pos = pos.saturating_sub(1);
                     }
-                    s.push_str(&typed);
-                    write_back(&mut interp, &scope, c, Value::text(s))?;
+                    if edit.right {
+                        pos = (pos + 1).min(chars.len());
+                    }
+                    if edit.home {
+                        pos = 0;
+                    }
+                    if edit.end {
+                        pos = chars.len();
+                    }
+                    if edit.backspace && pos > 0 {
+                        chars.remove(pos - 1);
+                        pos -= 1;
+                        changed = true;
+                    }
+                    if edit.delete && pos < chars.len() {
+                        chars.remove(pos);
+                        changed = true;
+                    }
+                    if edit.paste {
+                        for ch in edit.clipboard.chars().filter(|c| !c.is_control()) {
+                            chars.insert(pos, ch);
+                            pos += 1;
+                            changed = true;
+                        }
+                    }
+                    for ch in typed.chars() {
+                        chars.insert(pos, ch);
+                        pos += 1;
+                        changed = true;
+                    }
+
+                    caret = pos;
+                    if changed {
+                        let s: String = chars.iter().collect();
+                        write_back(&mut interp, &scope, c, Value::text(s))?;
+                    }
                 }
             } else {
                 focused = None;
@@ -283,6 +342,32 @@ fn write_back(
     Ok(())
 }
 
+/// Keyboard editing state for the focused text field this frame.
+struct TextEdit {
+    backspace: bool,
+    delete: bool,
+    left: bool,
+    right: bool,
+    home: bool,
+    end: bool,
+    paste: bool,
+    clipboard: String,
+}
+
+/// A key that counts as "pressed" on the initial press and while held (so
+/// backspace/arrows repeat like a normal text box).
+fn key_repeat(rl: &RaylibHandle, key: KeyboardKey) -> bool {
+    rl.is_key_pressed(key) || rl.is_key_pressed_repeat(key)
+}
+
+/// Map a click x-position to a caret index within a text field, using the same
+/// ~0.5em-per-character estimate the layout uses.
+fn caret_from_x(c: &ui::Control, click_x: f32) -> usize {
+    let em = (c.font_size as f32 * 0.5).max(1.0);
+    let rel = (click_x - (c.x + 8.0)).max(0.0);
+    ((rel / em).round() as usize).min(c.text.chars().count())
+}
+
 /// Map a mouse x-position to a slider's value, snapped to its step and clamped
 /// to its range. Returns `None` if the slider has no width.
 fn slider_value(c: &ui::Control, mouse_x: f32) -> Option<f64> {
@@ -294,7 +379,13 @@ fn slider_value(c: &ui::Control, mouse_x: f32) -> Option<f64> {
     if c.step > 0.0 {
         v = (v / c.step).round() * c.step;
     }
-    Some(v.clamp(c.min, c.max) as f64)
+    // Order-safe clamp: `f32::clamp` panics if min > max, so never assume the
+    // author wrote them in order.
+    let (lo, hi) = (c.min.min(c.max), c.min.max(c.max));
+    v = v.clamp(lo, hi);
+    // Shed floating-point noise from the snap so a 0.1 step doesn't surface as
+    // 0.30000000000000004 when displayed.
+    Some((v as f64 * 1e6).round() / 1e6)
 }
 
 fn point_in(p: (f32, f32), c: &ui::Control) -> bool {
@@ -416,5 +507,56 @@ fn const_number(expr: &Expr) -> Option<f64> {
         Expr::Number(n, _) => Some(*n),
         Expr::Unary { op: crate::ast::UnaryOp::Neg, expr, .. } => const_number(expr).map(|n| -n),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn slider(min: f32, max: f32, step: f32) -> ui::Control {
+        ui::Control {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 20.0,
+            kind: ui::ControlKind::Slider,
+            callback: None,
+            bind: None,
+            checked: false,
+            number: 0.0,
+            min,
+            max,
+            step,
+            text: String::new(),
+            font_size: 20,
+        }
+    }
+
+    #[test]
+    fn slider_maps_and_snaps() {
+        let s = slider(0.0, 100.0, 1.0);
+        assert_eq!(slider_value(&s, 0.0), Some(0.0)); // left edge
+        assert_eq!(slider_value(&s, 100.0), Some(100.0)); // right edge
+        assert_eq!(slider_value(&s, 50.0), Some(50.0)); // middle
+        // Off-track clicks clamp into range.
+        assert_eq!(slider_value(&s, -20.0), Some(0.0));
+        assert_eq!(slider_value(&s, 999.0), Some(100.0));
+    }
+
+    #[test]
+    fn slider_reversed_range_does_not_panic() {
+        // min > max must not panic on the internal clamp, and must stay in range.
+        let s = slider(100.0, 0.0, 1.0);
+        let v = slider_value(&s, 50.0).unwrap();
+        assert!(v >= 0.0 && v <= 100.0);
+    }
+
+    #[test]
+    fn slider_step_sheds_float_noise() {
+        // A 0.1 step should yield a clean decimal, not 0.30000000000000004.
+        let s = slider(0.0, 1.0, 0.1);
+        let v = slider_value(&s, 30.0).unwrap(); // 30% of [0,1] = 0.3
+        assert_eq!(v, 0.3);
     }
 }

@@ -40,10 +40,33 @@ pub fn http_get(url: &str, span: Span) -> Result<String, Diagnostic> {
             .map_err(|e| Diagnostic::new(span, format!("couldn't read the response from \"{}\": {}", url, e)))
     } else {
         std::fs::read_to_string(url).map_err(|e| {
-            Diagnostic::new(span, format!("couldn't read file \"{}\": {}", url, e))
-                .with_hint("for the web, use an https:// address; for offline demos, use a local path")
+            // A string like "api.example.com/data" is almost certainly a URL
+            // missing its scheme, not a file — point that out specifically.
+            let hint = if looks_like_bare_url(url) {
+                format!("that looks like a web address — did you mean \"https://{}\"?", url)
+            } else {
+                "for the web, use an https:// address; for offline demos, use a local path".into()
+            };
+            Diagnostic::new(span, format!("couldn't read file \"{}\": {}", url, e)).with_hint(hint)
         })
     }
+}
+
+/// Whether a scheme-less string looks like a bare web address (a dotted host
+/// followed by a path), so a missing `https://` can be flagged. Deliberately
+/// conservative so ordinary relative file paths don't trip it.
+fn looks_like_bare_url(s: &str) -> bool {
+    if s.contains(char::is_whitespace) || s.starts_with('.') || s.starts_with('/') || s.contains('\\') {
+        return false;
+    }
+    let Some(slash) = s.find('/') else { return false };
+    let host = &s[..slash];
+    let labels: Vec<&str> = host.split('.').collect();
+    labels.len() >= 2
+        && labels.iter().all(|l| !l.is_empty() && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+        && labels
+            .last()
+            .map_or(false, |tld| tld.len() >= 2 && tld.chars().all(|c| c.is_ascii_alphabetic()))
 }
 
 /// GET URL/file and parse the body as JSON.
@@ -191,6 +214,19 @@ mod tests {
             }
             other => panic!("expected dictionary, got {}", other.type_name()),
         }
+    }
+
+    #[test]
+    fn bare_url_detection() {
+        // Scheme-less web addresses (host + path) are flagged…
+        assert!(looks_like_bare_url("api.example.com/data"));
+        assert!(looks_like_bare_url("example.co.uk/x/y"));
+        // …but ordinary relative file paths are not.
+        assert!(!looks_like_bare_url("examples/fixtures/sample.json"));
+        assert!(!looks_like_bare_url("data/foo.json"));
+        assert!(!looks_like_bare_url("sample.json")); // no path segment
+        assert!(!looks_like_bare_url("./local/thing"));
+        assert!(!looks_like_bare_url("C:/tmp/x"));
     }
 
     #[test]

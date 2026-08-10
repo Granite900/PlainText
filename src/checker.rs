@@ -420,6 +420,7 @@ impl Checker {
                 let elem = self.element_type(&seq, *span);
                 self.declare(var, elem);
                 self.check_block(body, returns);
+                self.lint_loop_capture(var, body);
             }
             Stmt::Repeat { count, body, .. } => {
                 let t = self.type_of(count);
@@ -496,6 +497,16 @@ impl Checker {
         if let Some(label) = &w.label {
             self.type_of(label);
         }
+        // The kind of value an interactive widget reads from / writes back to,
+        // so a wrong `bind:`/`value:` variable is caught here instead of
+        // crashing (checkbox/slider) or silently corrupting a variable
+        // (text_field) at run time.
+        let expected = match w.name.as_str() {
+            "checkbox" => Some(Ty::Bool),
+            "slider" => Some(Ty::Number),
+            "text_field" => Some(Ty::Text),
+            _ => None,
+        };
         let mut has_bind = false;
         let mut has_value = false;
         for (name, expr) in &w.props {
@@ -509,12 +520,16 @@ impl Checker {
                         Some("write bind: myVariable".into()),
                     );
                 } else {
-                    self.type_of(expr); // still resolve it so unknown names error
+                    let t = self.type_of(expr); // also resolves it so unknown names error
+                    self.check_widget_value_ty(&w.name, expected.as_ref(), &t, expr.span());
                 }
                 continue;
             }
             if name == "value" || name == "checked" {
                 has_value = true;
+                let t = self.type_of(expr);
+                self.check_widget_value_ty(&w.name, expected.as_ref(), &t, expr.span());
+                continue;
             }
             let t = self.type_of(expr);
             if (name == "on_click" || name == "on_change") && !matches!(t, Ty::Function(_) | Ty::Dynamic) {
@@ -536,6 +551,83 @@ impl Checker {
         }
         for child in &w.children {
             self.check_widget(child);
+        }
+    }
+
+    /// Check that a `bind:`/`value:`/`checked:` variable matches the type the
+    /// widget reads and writes. `Dynamic` is always allowed (the escape hatch).
+    fn check_widget_value_ty(&mut self, widget: &str, expected: Option<&Ty>, actual: &Ty, span: Span) {
+        let Some(exp) = expected else { return };
+        if matches!(actual, Ty::Dynamic) {
+            return;
+        }
+        // Both directions must fit: the widget reads the variable AND writes the
+        // new value back, so the types have to be the same kind.
+        if !(assignable(actual, exp) && assignable(exp, actual)) {
+            self.error(
+                span,
+                format!("a {} binds to a {} value, but this is a {}", widget, exp.describe(), actual.describe()),
+                Some(format!("{} works with a {} variable", widget, exp.describe())),
+            );
+        }
+    }
+
+    /// Warn about the classic closure-in-a-loop footgun: an inline function
+    /// that captures the loop variable and is *stored* (assigned, returned, or
+    /// appended) escapes the iteration, so — with function-only scoping — every
+    /// saved copy ends up reading the loop's final value. Calling a lambda
+    /// immediately (e.g. `transformed_by`) is fine and never flagged.
+    fn lint_loop_capture(&mut self, loop_var: &str, body: &[Stmt]) {
+        for stmt in body {
+            match stmt {
+                Stmt::Assign { value, .. } => self.flag_escaping_lambda(loop_var, value),
+                Stmt::Return { value: Some(e), .. } => self.flag_escaping_lambda(loop_var, e),
+                Stmt::Expr(Expr::Call { callee, args, .. }) => {
+                    if let Expr::Field { name, .. } = callee.as_ref() {
+                        if name == "append" || name == "add" {
+                            for a in args {
+                                self.flag_escaping_lambda(loop_var, a);
+                            }
+                        }
+                    }
+                }
+                Stmt::If { branches, else_body, .. } => {
+                    for (_, b) in branches {
+                        self.lint_loop_capture(loop_var, b);
+                    }
+                    if let Some(b) = else_body {
+                        self.lint_loop_capture(loop_var, b);
+                    }
+                }
+                Stmt::While { body, .. } | Stmt::Loop { body, .. } | Stmt::Repeat { body, .. } => {
+                    self.lint_loop_capture(loop_var, body);
+                }
+                // A nested loop reusing the same name rebinds it — stop there.
+                Stmt::ForEvery { var, body, .. } if var != loop_var => {
+                    self.lint_loop_capture(loop_var, body);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn flag_escaping_lambda(&mut self, loop_var: &str, expr: &Expr) {
+        if let Expr::Function { decl, span } = expr {
+            // A parameter of the same name shadows the loop variable.
+            let shadowed = decl.params.iter().any(|p| p.name == loop_var);
+            if !shadowed && body_uses(&decl.body, loop_var) {
+                self.error(
+                    *span,
+                    format!(
+                        "this saved function captures the loop variable `{}`, so every copy will read its final value",
+                        loop_var
+                    ),
+                    Some(format!(
+                        "pass `{}` into a helper that returns the function, so each keeps its own value",
+                        loop_var
+                    )),
+                );
+            }
         }
     }
 
@@ -1498,5 +1590,55 @@ fn place_of(expr: &Expr) -> Option<String> {
             Some(format!("{}.{}", base, name))
         }
         _ => None,
+    }
+}
+
+/// Whether `name` is read anywhere in a block, respecting shadowing by inline
+/// functions whose parameter reuses the name. Used by the loop-capture lint.
+fn body_uses(body: &[Stmt], name: &str) -> bool {
+    body.iter().any(|s| stmt_uses(s, name))
+}
+
+fn stmt_uses(s: &Stmt, name: &str) -> bool {
+    match s {
+        Stmt::Assign { target, value, .. } => expr_uses(target, name) || expr_uses(value, name),
+        Stmt::If { branches, else_body, .. } => {
+            branches.iter().any(|(c, b)| expr_uses(c, name) || body_uses(b, name))
+                || else_body.as_ref().map_or(false, |b| body_uses(b, name))
+        }
+        Stmt::While { cond, body, .. } => expr_uses(cond, name) || body_uses(body, name),
+        Stmt::ForEvery { var, iterable, body, .. } => {
+            expr_uses(iterable, name) || (var != name && body_uses(body, name))
+        }
+        Stmt::Repeat { count, body, .. } => expr_uses(count, name) || body_uses(body, name),
+        Stmt::Loop { body, .. } => body_uses(body, name),
+        Stmt::Return { value: Some(e), .. } => expr_uses(e, name),
+        Stmt::Expr(e) => expr_uses(e, name),
+        _ => false,
+    }
+}
+
+fn expr_uses(e: &Expr, name: &str) -> bool {
+    match e {
+        Expr::Ident(n, _) => n == name,
+        Expr::Unary { expr, .. } | Expr::Try { expr, .. } | Expr::Wait { expr, .. } | Expr::IsNothing { expr, .. } => {
+            expr_uses(expr, name)
+        }
+        Expr::Binary { left, right, .. } => expr_uses(left, name) || expr_uses(right, name),
+        Expr::Otherwise { value, fallback, .. } => expr_uses(value, name) || expr_uses(fallback, name),
+        Expr::Call { callee, args, .. } => expr_uses(callee, name) || args.iter().any(|a| expr_uses(a, name)),
+        Expr::Field { object, .. } => expr_uses(object, name),
+        Expr::Index { object, index, .. } => expr_uses(object, name) || expr_uses(index, name),
+        Expr::ListLit { items, .. } => items.iter().any(|i| expr_uses(i, name)),
+        Expr::DictionaryLit { entries, .. } => {
+            entries.iter().any(|(k, v)| expr_uses(k, name) || expr_uses(v, name))
+        }
+        Expr::ClassLit { fields, .. } => fields.iter().any(|(_, v)| expr_uses(v, name)),
+        Expr::Text(chunks, _) => chunks.iter().any(|c| matches!(c, StrChunk::Expr(e) if expr_uses(e, name))),
+        // A nested inline function may shadow the name with its own parameter.
+        Expr::Function { decl, .. } => {
+            !decl.params.iter().any(|p| p.name == name) && body_uses(&decl.body, name)
+        }
+        _ => false,
     }
 }

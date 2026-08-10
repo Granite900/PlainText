@@ -21,6 +21,33 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Smart App Control (Windows 11) blocks unsigned downloaded executables outright
+# -- stricter than SmartScreen, and Unblock-File does NOT clear it. Detect it so
+# we can explain the block instead of dying on a confusing error.
+function Get-SmartAppControlState {
+    try {
+        $v = Get-ItemPropertyValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' `
+            -Name 'VerifiedAndReputablePolicyState' -ErrorAction Stop
+        switch ($v) { 1 { 'On' } 2 { 'Evaluation' } default { 'Off' } }
+    } catch { 'Off' }
+}
+
+function Show-SmartAppControlHelp {
+    Write-Host ''
+    Write-Host 'Smart App Control is blocking plaintext.exe.' -ForegroundColor Yellow
+    Write-Host 'Windows 11''s Smart App Control refuses unsigned downloaded programs, and'
+    Write-Host 'this release is not code-signed. PlainText is safe, but Windows cannot'
+    Write-Host 'confirm that on its own. Pick whichever fits you:'
+    Write-Host '  1. Build from source so the binary is local, not "downloaded":'
+    Write-Host '        cargo build --release   (needs Rust + LLVM; see GETTING-STARTED.md)'
+    Write-Host '  2. Run PlainText on a PC without Smart App Control.'
+    Write-Host '  3. Turn Smart App Control off: Windows Security > App & browser control'
+    Write-Host '     > Smart App Control settings > Off.'
+    Write-Host '     WARNING: on a fresh Windows install this switch is ONE-WAY -- it can'
+    Write-Host '     only be re-enabled by resetting Windows. Only do this if you accept that.'
+    Write-Host ''
+}
+
 # Find plaintext.exe: one level up from this script inside the release zip, or
 # in the current folder if you moved things around.
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -35,6 +62,13 @@ if (-not (Test-Path $bin)) {
 }
 $bin = (Resolve-Path $bin).Path
 Write-Host "Found PlainText at: $bin"
+
+$sac = Get-SmartAppControlState
+if ($sac -eq 'On') {
+    Write-Host ''
+    Write-Host 'Heads up: Smart App Control is ON. It may block this unsigned binary.' -ForegroundColor Yellow
+    Write-Host 'Continuing to install; if the check at the end fails, read the guidance shown.'
+}
 
 # 1: unblock the downloaded binary.
 try { Unblock-File -Path $bin } catch {}
@@ -62,12 +96,25 @@ if (-not $SkipPath) {
     $env:Path = "$env:Path;$InstallDir"
 }
 
-# Verify by running the copy we just installed.
+# Verify by running the copy we just installed. If Smart App Control blocks it,
+# the install itself still succeeded -- explain the block instead of erroring out.
 Write-Host ''
-$version = (& $target version) -join ' '
-Write-Host "Done - installed $version."
-if ($SkipPath) {
-    Write-Host "Add $InstallDir to your PATH to run it as just 'plaintext'."
-} else {
-    Write-Host "Open a NEW terminal, then try:  plaintext run examples\basics.pt"
+try {
+    $version = (& $target version) -join ' '
+    Write-Host "Done - installed $version."
+    if ($SkipPath) {
+        Write-Host "Add $InstallDir to your PATH to run it as just 'plaintext'."
+    } else {
+        Write-Host "Open a NEW terminal, then try:  plaintext run examples\basics.pt"
+    }
+} catch {
+    Write-Host "Installed to: $target"
+    Write-Host "But Windows wouldn't let it run just now." -ForegroundColor Yellow
+    if ((Get-SmartAppControlState) -ne 'Off') {
+        Show-SmartAppControlHelp
+    } else {
+        Write-Host "Error was: $($_.Exception.Message)"
+        Write-Host "Try opening a new terminal and running:  plaintext version"
+    }
+    exit 1
 }

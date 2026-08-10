@@ -66,6 +66,37 @@ print(triple(7))    // 21
 These are handy for [collections](07-collections.md) (`transformed_by`, `kept_if`,
 `combined`), button `on_click` handlers, and `after`/`every` timers.
 
+### Careful: capturing a loop variable
+
+"Remembers the variables around it" is literal — an inline function holds on to the *variable*,
+not a copy of its value. If you build functions inside a loop and save them for later, they all
+end up sharing the loop variable's **final** value:
+
+```plaintext
+actions: Anything list = []
+for every i in [1, 2, 3] {
+    actions.append(make function () { return i })   // all three would return 3
+}
+```
+
+Each saved function would report `3`, because by the time you call them the loop has finished
+and `i` is `3`. PlainText **flags this** at check time. If you need each function to remember its
+own value, pass it in as a parameter instead:
+
+```plaintext
+make function called remember(value) {
+    return make function () { return value }        // `value` is this call's own
+}
+
+actions: Anything list = []
+for every i in [1, 2, 3] {
+    actions.append(remember(i))                     // 1, 2, 3
+}
+```
+
+(Calling an inline function *right away* inside the loop — like `transformed_by(...)` does — is
+always fine; this only bites when you store it and call it after the loop moves on.)
+
 ## Practice
 
 Open [`examples/basics.pt`](../../examples/basics.pt). Near the end it defines an `Item`

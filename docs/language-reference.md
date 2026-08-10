@@ -172,6 +172,12 @@ Typical uses: the list helpers `transformed_by` / `kept_if` / `combined` (§8), 
 `on_click` (§11), and `after` / `every` timers (§9). Parameter types are optional here too —
 leave them off for a flexible parameter.
 
+> **Capturing a loop variable.** Because a closure holds the *variable*, not a snapshot, saving
+> a loop-made function for later (`list.append(make function () { return i })`) means every copy
+> reads the loop's final value. PlainText rejects that pattern at check time — pass the value
+> into a helper that returns the function so each keeps its own. Calling a lambda immediately
+> (as `transformed_by` does) is always fine. See the [functions lesson](learn/05-functions.md).
+
 ---
 
 ## 4. Making decisions

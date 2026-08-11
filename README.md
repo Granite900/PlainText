@@ -167,10 +167,14 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v2.10.3`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
+(`v2.11.0`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## What's new
+
+**2.11** — the tilemap editor now keeps levels in their own file. Saving moves the map into a
+sidecar `<file>.tiles.pt` and adds an `import` for it, so your main program stays short instead
+of carrying dozens of rows inline.
 
 **2.10.3** — tilemap editor: assigning a PNG from outside the project folder now saves a clean
 path (no stray `//?/` Windows prefix), so the tile image loads.

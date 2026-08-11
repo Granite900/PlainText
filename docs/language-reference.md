@@ -874,9 +874,10 @@ scope for now).
 (`screen = "menu"` / `"play"`) and `if` branches inside `on update` / `on draw` — see
 [`examples/tilemap.pt`](../examples/tilemap.pt).
 
-**Editor.** `plaintext edit_tilemap <file.pt>` opens a paint window that rewrites that file’s
-`tilemap` rows / solids and a nearby `<name>_tiles` dictionary (one PNG path per character).
-Resize the grid with the **+ / −** column and row buttons. It does not edit bodies or hitboxes.
+**Editor.** `plaintext edit_tilemap <file.pt>` opens a paint window. Saving moves the level into
+a sidecar `<file>.tiles.pt` that your program `import`s (keeping the main file short); the
+sidecar holds the `tilemap` rows, `solid_tiles`, and the per-character image dictionary. Resize
+the grid with the **+ / −** column and row buttons. It does not edit bodies or hitboxes.
 
 **Drawing.** `draw_body(body, color)`, `draw_hitbox(hitbox, color)`, `draw_hitboxes(world)`,
 `draw_tilemap(map, tile_colors: …)`.

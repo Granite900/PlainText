@@ -1,7 +1,9 @@
 // Tilemap levels + a tiny menu/play "scene" switch (a `screen` variable).
 // Arrows / A-D move, SPACE / W / UP jump. Esc returns to the menu.
 // Run with:  plaintext run examples/tilemap.pt
-// Edit the level in a GUI (rewrites this file):  plaintext edit_tilemap examples/tilemap.pt
+// Edit the level in a GUI:  plaintext edit_tilemap examples/tilemap.pt
+// The first save moves the level into examples/tilemap.tiles.pt and adds an
+// `import` for it here, so this file stays short.
 //
 // Drawing uses colored rectangles (no tileset image). In the editor you can drop
 // PNGs to assign a tile image per character; this example sticks to color drawing.
@@ -9,7 +11,7 @@
 import gamekit
 
 cell = 40
-level = tilemap(cell_size: cell, rows: [
+level = tilemap(cell_size: 40, rows: [
     "################",
     "#..............#",
     "#..............#",

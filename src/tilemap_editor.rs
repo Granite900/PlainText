@@ -10,7 +10,8 @@ use raylib::core::drawing::RaylibScissorModeExt;
 use raylib::prelude::*;
 
 use crate::tilemap_edit_source::{
-    apply_to_source, insert_starter, load_from_source, relativize_path, TilemapDoc,
+    add_import_if_missing, apply_to_source, insert_starter, load_from_source, relativize_path,
+    render_sidecar, sidecar_filename, starter_block, wire_main_to_sidecar, TilemapDoc,
 };
 
 const PALETTE: &[char] = &['#', '.', 'P', 'A', 'B', 'C', 'D', 'E', 'F', 'G'];
@@ -29,7 +30,15 @@ fn in_rect(mx: i32, my: i32, r: (i32, i32, i32, i32)) -> bool {
 }
 
 struct EditorState {
+    /// File the tilemap data is saved to (the sidecar, once migrated).
     path: PathBuf,
+    /// The program the user invoked; gets the `import` of the sidecar.
+    main_path: PathBuf,
+    /// Sidecar filename used in the main program's `import`.
+    sidecar_name: String,
+    /// Once true, `path` holds the tilemap and saves rewrite it in place.
+    /// While false, the first save extracts the map into a new sidecar file.
+    migrated: bool,
     source: String,
     doc: TilemapDoc,
     selected: char,
@@ -54,28 +63,48 @@ fn cell_px(zoom: f32) -> i32 {
 }
 
 pub fn run(path: &Path) -> Result<(), String> {
-    let path = path.to_path_buf();
-    let mut source = std::fs::read_to_string(&path)
-        .map_err(|e| format!("can't read {}: {}", path.display(), e))?;
+    let invoked = path.to_path_buf();
+    let main_src = std::fs::read_to_string(&invoked)
+        .map_err(|e| format!("can't read {}: {}", invoked.display(), e))?;
+    let invoked_name = invoked
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("main.pt")
+        .to_string();
 
-    let doc = match load_from_source(&source) {
-        Ok(d) => d,
-        Err(_) => {
-            source = insert_starter(&source);
-            load_from_source(&source).map_err(|e| {
-                format!("couldn't find or insert a tilemap in {}: {}", path.display(), e)
-            })?
-        }
+    // Decide which file actually holds the tilemap data.
+    let sidecar_name = sidecar_filename(&invoked_name);
+    let sidecar_path = invoked.with_file_name(&sidecar_name);
+
+    let (edit_path, edit_source, doc, migrated) = if invoked_name.ends_with(".tiles.pt") {
+        // Invoked a sidecar / standalone map file directly — edit it in place.
+        let (src, doc) = load_or_start(&invoked, main_src)?;
+        (invoked.clone(), src, doc, true)
+    } else if let Some((src, doc)) = existing_sidecar(&sidecar_path) {
+        // A sidecar already sits next to the main file — edit it.
+        (sidecar_path.clone(), src, doc, true)
+    } else {
+        // Main defines the tilemap inline (or has none yet): edit a doc that the
+        // first save extracts into a new sidecar file.
+        let doc = match load_from_source(&main_src) {
+            Ok(d) => d,
+            Err(_) => load_from_source(starter_block())
+                .map_err(|e| format!("couldn't create a starter tilemap: {e}"))?,
+        };
+        (sidecar_path.clone(), main_src, doc, false)
     };
 
-    let title = format!("PlainText tilemap — {}", path.display());
+    let title = format!("PlainText tilemap — {}", invoked.display());
     let (mut rl, thread) = raylib::init().size(1100, 720).title(&title).build();
     rl.set_target_fps(60);
     rl.set_exit_key(None); // Esc is for UI; close via window X
 
     let mut state = EditorState {
-        path,
-        source: source.clone(),
+        path: edit_path,
+        main_path: invoked,
+        sidecar_name,
+        migrated,
+        source: edit_source,
         doc,
         selected: '#',
         status: "Paint · MMB/Space-drag pan · Wheel zoom · S solid · Ctrl+S save · drop PNG"
@@ -99,6 +128,27 @@ pub fn run(path: &Path) -> Result<(), String> {
         draw_frame(&mut rl, &thread, &state);
     }
     Ok(())
+}
+
+/// Load a tilemap from `src`, inserting a starter block if the file has none.
+fn load_or_start(path: &Path, src: String) -> Result<(String, TilemapDoc), String> {
+    match load_from_source(&src) {
+        Ok(d) => Ok((src, d)),
+        Err(_) => {
+            let with = insert_starter(&src);
+            let d = load_from_source(&with).map_err(|e| {
+                format!("couldn't find or insert a tilemap in {}: {}", path.display(), e)
+            })?;
+            Ok((with, d))
+        }
+    }
+}
+
+/// A sidecar next to the main file that already parses as a tilemap.
+fn existing_sidecar(sidecar: &Path) -> Option<(String, TilemapDoc)> {
+    let src = std::fs::read_to_string(sidecar).ok()?;
+    let doc = load_from_source(&src).ok()?;
+    Some((src, doc))
 }
 
 fn reload_textures(rl: &mut RaylibHandle, thread: &RaylibThread, state: &mut EditorState) {
@@ -346,6 +396,10 @@ fn grid_cell(mx: i32, my: i32, state: &EditorState) -> Option<(usize, usize)> {
 }
 
 fn save(state: &mut EditorState) {
+    if !state.migrated {
+        migrate_and_save(state);
+        return;
+    }
     match apply_to_source(&state.source, &state.doc) {
         Ok(new_src) => {
             if !state.backed_up {
@@ -366,11 +420,84 @@ fn save(state: &mut EditorState) {
                     return;
                 }
             }
+            ensure_main_imports(state);
             state.dirty = false;
             state.status = format!("saved {}", state.path.display());
         }
         Err(e) => state.status = format!("can't write source: {e}"),
     }
+}
+
+/// First save: write the tilemap out to its own sidecar file and rewrite the
+/// main program to `import` it instead of holding the rows inline.
+fn migrate_and_save(state: &mut EditorState) {
+    let sidecar_src = render_sidecar(&state.doc);
+    if let Err(e) = std::fs::write(&state.path, &sidecar_src) {
+        state.status = format!("couldn't write {}: {e}", state.path.display());
+        return;
+    }
+    match std::fs::read_to_string(&state.main_path) {
+        Ok(main_src) => {
+            match wire_main_to_sidecar(&main_src, &state.doc.map_name, &state.sidecar_name) {
+                Ok(new_main) if new_main != main_src => {
+                    if !state.backed_up {
+                        let bak = state.main_path.with_extension("pt.bak");
+                        let _ = std::fs::write(&bak, &main_src);
+                        state.backed_up = true;
+                    }
+                    if let Err(e) = std::fs::write(&state.main_path, &new_main) {
+                        state.status = format!("saved level, but couldn't update main: {e}");
+                        return;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    state.status = format!("saved level, but couldn't wire the import: {e}");
+                    return;
+                }
+            }
+        }
+        Err(e) => {
+            state.status = format!("saved level, but couldn't read the main file: {e}");
+            return;
+        }
+    }
+    state.source = sidecar_src;
+    match load_from_source(&state.source) {
+        Ok(d) => state.doc = d,
+        Err(e) => {
+            state.status = format!("saved, but reload failed: {e}");
+            return;
+        }
+    }
+    state.migrated = true;
+    state.dirty = false;
+    state.status = format!(
+        "saved level → {} · {} imports it",
+        file_label(&state.path),
+        file_label(&state.main_path)
+    );
+}
+
+/// Add the sidecar `import` to the main program if it's somehow missing (the
+/// main and the edited file differ). Cheap no-op once the import is in place.
+fn ensure_main_imports(state: &mut EditorState) {
+    if state.main_path == state.path {
+        return;
+    }
+    let Ok(main_src) = std::fs::read_to_string(&state.main_path) else {
+        return;
+    };
+    if let Some(new_main) = add_import_if_missing(&main_src, &state.sidecar_name) {
+        let _ = std::fs::write(&state.main_path, new_main);
+    }
+}
+
+fn file_label(path: &Path) -> String {
+    path.file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 fn revert(state: &mut EditorState) {

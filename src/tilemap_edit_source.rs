@@ -18,6 +18,9 @@ pub enum SolidLoc {
 #[derive(Debug, Clone)]
 pub struct TilemapDoc {
     pub map_name: String,
+    /// Raw `cell_size:` expression from the `tilemap(...)` call (e.g. "40"),
+    /// kept verbatim so literals and simple expressions survive a rewrite.
+    pub cell_size: String,
     pub rows: Vec<String>,
     pub solid_tiles: Vec<char>,
     pub solid_loc: SolidLoc,
@@ -154,16 +157,27 @@ pub fn load_from_source(src: &str) -> Result<TilemapDoc, String> {
         return Err("tilemap rows can't be empty".into());
     }
 
+    let cell_size = parse_cell_size(call_inner).unwrap_or_else(|| "32".to_string());
     let (solid_tiles, solid_loc) = load_solids(src, &map_name, call_inner)?;
     let tiles = load_tiles_dict(src, &map_name)?;
 
     Ok(TilemapDoc {
         map_name,
+        cell_size,
         rows,
         solid_tiles,
         solid_loc,
         tiles,
     })
+}
+
+/// The `cell_size:` value as written, up to the next top-level comma.
+fn parse_cell_size(call_inner: &str) -> Option<String> {
+    let start = call_inner.find("cell_size:")?;
+    let after = &call_inner[start + "cell_size:".len()..];
+    let end = after.find(',').unwrap_or(after.len());
+    let expr = after[..end].trim().to_string();
+    (!expr.is_empty()).then_some(expr)
 }
 
 /// Rewrite `src` so it matches `doc`. Returns the new file text.
@@ -767,6 +781,176 @@ fn simplify(path: &std::path::Path) -> std::path::PathBuf {
     path.to_path_buf()
 }
 
+// ---- sidecar level files -------------------------------------------------
+//
+// The editor keeps the bulky tilemap data (rows + tile images) in its own
+// `.tiles.pt` file that the main program `import`s, instead of inlining dozens
+// of rows into the main script.
+
+/// Filename of the sidecar level file for `main` (`game.pt` → `game.tiles.pt`).
+pub fn sidecar_filename(main: &str) -> String {
+    let stem = main.strip_suffix(".pt").unwrap_or(main);
+    format!("{}.tiles.pt", stem)
+}
+
+/// Render a standalone `.pt` file holding just the tilemap and its tile images,
+/// meant to be `import`ed by the main program (which supplies `import gamekit`).
+pub fn render_sidecar(doc: &TilemapDoc) -> String {
+    let mut s = format!(
+        "// Tilemap data for `{name}`, edited by `plaintext edit_tilemap`.\n\
+         // The main program imports this file — keep them together.\n\n",
+        name = doc.map_name
+    );
+    s.push_str(&doc.map_name);
+    s.push_str(" = tilemap(cell_size: ");
+    s.push_str(&doc.cell_size);
+    s.push_str(", rows: [\n");
+    for row in &doc.rows {
+        s.push_str("    \"");
+        s.push_str(&escape_pt_string(row));
+        s.push_str("\",\n");
+    }
+    s.push(']');
+    if !doc.solid_tiles.is_empty() {
+        s.push_str(", solid_tiles: ");
+        s.push_str(&render_solid_list(&doc.solid_tiles));
+    }
+    s.push_str(")\n");
+    if !doc.tiles.is_empty() {
+        s.push('\n');
+        s.push_str(&doc.map_name);
+        s.push_str("_tiles = dictionary {");
+        s.push_str(&render_tiles_dict(&doc.tiles));
+        s.push_str("}\n");
+    }
+    s
+}
+
+/// Rewrite the main program so it `import`s `sidecar_name` instead of defining
+/// the tilemap inline: drop the `name = tilemap(...)` statement and the
+/// `name_tiles` dictionary, strip `solid_tiles:` from `add_tilemap(name, …)`
+/// (they live in the sidecar now), and add the import if it's missing.
+pub fn wire_main_to_sidecar(
+    main_src: &str,
+    map_name: &str,
+    sidecar_name: &str,
+) -> Result<String, String> {
+    let import_stmt = format!("import \"{}\"", sidecar_name);
+    let has_import = main_src.contains(&import_stmt);
+
+    // Collect edits as (start, end, replacement) into the original source,
+    // then apply them right-to-left so earlier offsets stay valid.
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+
+    match tilemap_stmt_range(main_src, map_name) {
+        Some((s, e)) => {
+            let rep = if has_import {
+                String::new()
+            } else {
+                format!("{}\n", import_stmt)
+            };
+            edits.push((s, e, rep));
+        }
+        None if !has_import => {
+            let pos = import_insert_pos(main_src);
+            edits.push((pos, pos, format!("{}\n", import_stmt)));
+        }
+        None => {}
+    }
+
+    if let Some((s, e)) = dict_stmt_range(main_src, &format!("{}_tiles", map_name)) {
+        edits.push((s, e, String::new()));
+    }
+    if let Some((s, e)) = solids_strip_range(main_src, map_name) {
+        edits.push((s, e, String::new()));
+    }
+
+    edits.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut out = main_src.to_string();
+    for (s, e, rep) in edits {
+        if s <= e && e <= out.len() {
+            out.replace_range(s..e, &rep);
+        }
+    }
+    Ok(out)
+}
+
+/// Add `import "sidecar_name"` (after the last import, else at the top) unless
+/// the main program already imports it. Returns `None` when nothing changed.
+pub fn add_import_if_missing(main_src: &str, sidecar_name: &str) -> Option<String> {
+    let import_stmt = format!("import \"{}\"", sidecar_name);
+    if main_src.contains(&import_stmt) {
+        return None;
+    }
+    let pos = import_insert_pos(main_src);
+    let mut out = main_src.to_string();
+    out.insert_str(pos, &format!("{}\n", import_stmt));
+    Some(out)
+}
+
+/// Byte range of the whole `name = tilemap(...)` statement (line start → after
+/// the closing `)` and its newline).
+fn tilemap_stmt_range(src: &str, map_name: &str) -> Option<(usize, usize)> {
+    let (open, close) = tilemap_call_range(src, map_name).ok()?;
+    let start = src[..open].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let mut end = close + 1;
+    if src[end..].starts_with('\n') {
+        end += 1;
+    }
+    Some((start, end))
+}
+
+/// Byte range of the whole `name = dictionary { ... }` statement.
+fn dict_stmt_range(src: &str, dict_name: &str) -> Option<(usize, usize)> {
+    let (brace, close) = dict_brace_range(src, dict_name)?;
+    let start = src[..brace].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let mut end = close + 1;
+    if src[end..].starts_with('\n') {
+        end += 1;
+    }
+    Some((start, end))
+}
+
+fn add_tilemap_call_range(src: &str, map_name: &str) -> Option<(usize, usize)> {
+    let needle = format!("add_tilemap({}", map_name);
+    let idx = src.find(&needle)?;
+    let open = src[idx..].find('(').map(|p| idx + p)?;
+    let close = find_matching(src, open, '(', ')')?;
+    Some((open, close))
+}
+
+/// Byte range of `, solid_tiles: [...]` inside `add_tilemap(name, …)`, so it can
+/// be removed (the comma before the argument is included when present).
+fn solids_strip_range(src: &str, map_name: &str) -> Option<(usize, usize)> {
+    let (open, close) = add_tilemap_call_range(src, map_name)?;
+    let inner = &src[open + 1..close];
+    let (_, list_close) = solid_tiles_list_range(inner)?;
+    let key_pos = inner.find("solid_tiles:")?;
+    let bytes = inner.as_bytes();
+    let mut s = key_pos;
+    while s > 0 && bytes[s - 1].is_ascii_whitespace() {
+        s -= 1;
+    }
+    if s > 0 && bytes[s - 1] == b',' {
+        s -= 1;
+    }
+    Some((open + 1 + s, open + 1 + list_close + 1))
+}
+
+fn import_insert_pos(src: &str) -> usize {
+    let mut pos = 0usize;
+    let mut cur = 0usize;
+    for line in src.lines() {
+        let has_nl = cur + line.len() < src.len();
+        let next = cur + line.len() + if has_nl { 1 } else { 0 };
+        if line.trim_start().starts_with("import ") {
+            pos = next;
+        }
+        cur = next;
+    }
+    pos
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -872,6 +1056,59 @@ mod tests {
         let out = apply_to_source(SAMPLE, &doc).unwrap();
         let again = load_from_source(&out).unwrap();
         assert_eq!((again.width(), again.height()), (5, 4));
+    }
+
+    #[test]
+    fn sidecar_filename_derives_from_main() {
+        assert_eq!(sidecar_filename("game.pt"), "game.tiles.pt");
+        assert_eq!(sidecar_filename("levels/cave.pt"), "levels/cave.tiles.pt");
+    }
+
+    #[test]
+    fn render_sidecar_round_trips() {
+        let mut doc = load_from_source(SAMPLE).unwrap();
+        doc.tiles.insert('#', "examples/assets/wall.png".into());
+        let side = render_sidecar(&doc);
+        let back = load_from_source(&side).unwrap();
+        assert_eq!(back.map_name, "level");
+        assert_eq!(back.cell_size, "40");
+        assert_eq!(back.rows, doc.rows);
+        assert!(back.is_solid('#'));
+        assert_eq!(back.solid_loc, SolidLoc::InTilemap);
+        assert_eq!(
+            back.tiles.get(&'#').map(String::as_str),
+            Some("examples/assets/wall.png")
+        );
+    }
+
+    #[test]
+    fn wire_main_moves_inline_tilemap_to_import() {
+        // SAMPLE keeps solids on add_tilemap; they must move out of main.
+        let new_main = wire_main_to_sidecar(SAMPLE, "level", "sample.tiles.pt").unwrap();
+        assert!(new_main.contains("import \"sample.tiles.pt\""));
+        assert!(!new_main.contains("tilemap(cell_size")); // inline definition gone
+        assert!(new_main.contains("world.add_tilemap(level)")); // solids stripped
+        assert!(!new_main.contains("solid_tiles"));
+        assert!(new_main.contains("import gamekit")); // surroundings intact
+        assert!(new_main.contains("physics_world"));
+    }
+
+    #[test]
+    fn wire_main_handles_inline_solids_and_no_duplicate_import() {
+        let src = "import gamekit\nm = tilemap(cell_size: 16, rows: [\"##\", \"##\"], solid_tiles: [\"#\"])\nworld = physics_world(gravity: 1)\nworld.add_tilemap(m)\nimport \"x.tiles.pt\"\n";
+        let new_main = wire_main_to_sidecar(src, "m", "x.tiles.pt").unwrap();
+        // Import already present → not duplicated.
+        assert_eq!(new_main.matches("import \"x.tiles.pt\"").count(), 1);
+        assert!(!new_main.contains("= tilemap("));
+        assert!(new_main.contains("world.add_tilemap(m)"));
+    }
+
+    #[test]
+    fn wire_main_adds_import_when_no_inline_tilemap() {
+        let src = "import gamekit\n\nprint(\"hi\")\n";
+        let new_main = wire_main_to_sidecar(src, "level", "game.tiles.pt").unwrap();
+        assert!(new_main.contains("import \"game.tiles.pt\""));
+        assert!(new_main.contains("print(\"hi\")"));
     }
 
     #[test]

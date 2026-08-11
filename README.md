@@ -167,10 +167,14 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v2.11.2`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
+(`v2.11.3`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## What's new
+
+**2.11.3** — the tilemap editor now **merges** the tile dictionary on save: only the characters
+you changed are added/replaced, and hand-written entries (like a `"#": gray` color) are kept
+instead of being purged.
 
 **2.11.2** — tile images actually draw now: `draw_tilemap(level, tile_images: level_tiles)`
 renders a PNG per character (pass the editor's `<map>_tiles` dictionary). A text value is drawn

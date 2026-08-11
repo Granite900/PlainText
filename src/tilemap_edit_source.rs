@@ -24,8 +24,12 @@ pub struct TilemapDoc {
     pub rows: Vec<String>,
     pub solid_tiles: Vec<char>,
     pub solid_loc: SolidLoc,
-    /// Character → image path (from `<name>_tiles` dictionary).
+    /// Character → image path — the entries the editor manages (text values in
+    /// the `<name>_tiles` dictionary).
     pub tiles: BTreeMap<char, String>,
+    /// Every `<name>_tiles` entry as (char, raw-value-text), in order, so that
+    /// non-image values (e.g. `"#": gray`) survive a save untouched.
+    pub tile_entries_raw: Vec<(char, String)>,
 }
 
 impl TilemapDoc {
@@ -159,7 +163,8 @@ pub fn load_from_source(src: &str) -> Result<TilemapDoc, String> {
 
     let cell_size = parse_cell_size(call_inner).unwrap_or_else(|| "32".to_string());
     let (solid_tiles, solid_loc) = load_solids(src, &map_name, call_inner)?;
-    let tiles = load_tiles_dict(src, &map_name)?;
+    let tile_entries_raw = load_tiles_dict(src, &map_name)?;
+    let tiles = image_paths(&tile_entries_raw);
 
     Ok(TilemapDoc {
         map_name,
@@ -168,6 +173,7 @@ pub fn load_from_source(src: &str) -> Result<TilemapDoc, String> {
         solid_tiles,
         solid_loc,
         tiles,
+        tile_entries_raw,
     })
 }
 
@@ -433,12 +439,23 @@ fn find_add_tilemap_options<'a>(src: &'a str, map_name: &str) -> Option<&'a str>
     Some(&src[open + 1..close])
 }
 
-fn load_tiles_dict(src: &str, map_name: &str) -> Result<BTreeMap<char, String>, String> {
+fn load_tiles_dict(src: &str, map_name: &str) -> Result<Vec<(char, String)>, String> {
     let dict_name = format!("{}_tiles", map_name);
     match find_dict_assignment(src, &dict_name) {
-        Some(inner) => parse_char_path_dict(inner),
-        None => Ok(BTreeMap::new()),
+        Some(inner) => parse_dict_entries_raw(inner),
+        None => Ok(Vec::new()),
     }
+}
+
+/// Image paths (the quoted-string values) from parsed dictionary entries.
+fn image_paths(entries: &[(char, String)]) -> BTreeMap<char, String> {
+    let mut map = BTreeMap::new();
+    for (ch, raw) in entries {
+        if let Some(path) = parse_one_string(raw) {
+            map.insert(*ch, path);
+        }
+    }
+    map
 }
 
 fn find_dict_assignment<'a>(src: &'a str, name: &str) -> Option<&'a str> {
@@ -486,13 +503,15 @@ fn find_dict_assignment<'a>(src: &'a str, name: &str) -> Option<&'a str> {
     None
 }
 
-fn parse_char_path_dict(inner: &str) -> Result<BTreeMap<char, String>, String> {
-    let mut map = BTreeMap::new();
-    // Scan "key": "value" pairs
-    let mut i = 0;
+/// Parse a `dictionary { "k": value, ... }` body into ordered (key, raw-value)
+/// pairs. The value is kept verbatim — a quoted `"path.png"`, a color word like
+/// `gray`, an `rgb(...)` call — so entries the editor doesn't manage survive a
+/// rewrite. Tolerant of value shapes it doesn't understand.
+fn parse_dict_entries_raw(inner: &str) -> Result<Vec<(char, String)>, String> {
     let chars: Vec<char> = inner.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
     while i < chars.len() {
-        // skip whitespace and commas
         while i < chars.len() && (chars[i].is_whitespace() || chars[i] == ',') {
             i += 1;
         }
@@ -500,8 +519,7 @@ fn parse_char_path_dict(inner: &str) -> Result<BTreeMap<char, String>, String> {
             break;
         }
         if chars[i] != '"' {
-            // skip unknown token
-            i += 1;
+            i = skip_to_top_comma(&chars, i);
             continue;
         }
         let (key, next) = read_string_from(&chars, i)?;
@@ -510,17 +528,16 @@ fn parse_char_path_dict(inner: &str) -> Result<BTreeMap<char, String>, String> {
             i += 1;
         }
         if i >= chars.len() || chars[i] != ':' {
+            i = skip_to_top_comma(&chars, i);
             continue;
         }
-        i += 1;
+        i += 1; // past ':'
         while i < chars.len() && chars[i].is_whitespace() {
             i += 1;
         }
-        if i >= chars.len() || chars[i] != '"' {
-            return Err("tile image paths must be text".into());
-        }
-        let (val, next) = read_string_from(&chars, i)?;
-        i = next;
+        let start = i;
+        i = skip_to_top_comma(&chars, i);
+        let raw = chars[start..i].iter().collect::<String>().trim_end().to_string();
         let mut kc = key.chars();
         let Some(ch) = kc.next() else {
             continue;
@@ -528,9 +545,42 @@ fn parse_char_path_dict(inner: &str) -> Result<BTreeMap<char, String>, String> {
         if kc.next().is_some() {
             return Err(format!("tile key \"{}\" should be one character", key));
         }
-        map.insert(ch, val);
+        if !raw.is_empty() {
+            out.push((ch, raw));
+        }
     }
-    Ok(map)
+    Ok(out)
+}
+
+/// Advance past a dictionary value to the next top-level `,` (or the end),
+/// respecting nested `()[]{}` and string literals.
+fn skip_to_top_comma(chars: &[char], mut i: usize) -> usize {
+    let mut depth = 0i32;
+    let mut in_str = false;
+    let mut escape = false;
+    while i < chars.len() {
+        let c = chars[i];
+        if in_str {
+            if escape {
+                escape = false;
+            } else if c == '\\' {
+                escape = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            ',' if depth == 0 => break,
+            _ => {}
+        }
+        i += 1;
+    }
+    i
 }
 
 fn read_string_from(chars: &[char], start: usize) -> Result<(String, usize), String> {
@@ -686,17 +736,19 @@ fn render_solid_list(chars: &[char]) -> String {
 
 fn rewrite_tiles_dict(src: &str, doc: &TilemapDoc) -> Result<String, String> {
     let dict_name = format!("{}_tiles", doc.map_name);
-    let body = render_tiles_dict(&doc.tiles);
     if let Some((brace, close)) = dict_brace_range(src, &dict_name) {
+        // Merge into what's already there so non-image entries are preserved.
+        let existing = parse_dict_entries_raw(&src[brace + 1..close])?;
+        let body = merge_and_render_tiles(&existing, &doc.tiles);
         let mut out = String::new();
         out.push_str(&src[..brace + 1]);
         out.push_str(&body);
         out.push_str(&src[close..]);
         Ok(out)
     } else {
-        // Insert after the tilemap assignment statement.
+        // Insert a fresh dictionary after the tilemap assignment statement.
+        let body = merge_and_render_tiles(&[], &doc.tiles);
         let (_, close) = tilemap_call_range(src, &doc.map_name)?;
-        // End of statement: after `)` maybe newline
         let insert_at = close + 1;
         let mut out = String::new();
         out.push_str(&src[..insert_at]);
@@ -738,19 +790,45 @@ fn dict_brace_range(src: &str, name: &str) -> Option<(usize, usize)> {
     None
 }
 
-fn render_tiles_dict(tiles: &BTreeMap<char, String>) -> String {
-    if tiles.is_empty() {
+/// Merge the editor's image assignments into existing dictionary entries: keep
+/// each entry as written unless the editor has an image for that character (then
+/// swap in the image path), and append any brand-new image characters. Entries
+/// the editor doesn't manage (colors, etc.) are left exactly as they were.
+fn merge_and_render_tiles(existing: &[(char, String)], images: &BTreeMap<char, String>) -> String {
+    let mut entries: Vec<(char, String)> = Vec::new();
+    let mut seen: std::collections::BTreeSet<char> = std::collections::BTreeSet::new();
+    for (ch, raw) in existing {
+        seen.insert(*ch);
+        match images.get(ch) {
+            Some(path) => entries.push((*ch, quote_pt_string(path))),
+            None => entries.push((*ch, raw.clone())),
+        }
+    }
+    for (ch, path) in images {
+        if !seen.contains(ch) {
+            entries.push((*ch, quote_pt_string(path)));
+        }
+    }
+    render_tile_entries(&entries)
+}
+
+fn render_tile_entries(entries: &[(char, String)]) -> String {
+    if entries.is_empty() {
         return " ".to_string();
     }
     let mut s = String::from("\n");
-    for (ch, path) in tiles {
+    for (ch, raw) in entries {
         s.push_str("    \"");
         s.push_str(&escape_pt_string(&ch.to_string()));
-        s.push_str("\": \"");
-        s.push_str(&escape_pt_string(path));
-        s.push_str("\",\n");
+        s.push_str("\": ");
+        s.push_str(raw);
+        s.push_str(",\n");
     }
     s
+}
+
+fn quote_pt_string(s: &str) -> String {
+    format!("\"{}\"", escape_pt_string(s))
 }
 
 fn escape_pt_string(s: &str) -> String {
@@ -817,11 +895,11 @@ pub fn render_sidecar(doc: &TilemapDoc) -> String {
         s.push_str(&render_solid_list(&doc.solid_tiles));
     }
     s.push_str(")\n\n");
-    // Always emit the tile-image dictionary (empty by default) so it's obvious
-    // where to map characters to PNGs.
+    // Always emit the tile dictionary (empty by default) so it's obvious where
+    // to map characters to PNGs. Merge keeps any non-image entries (colors).
     s.push_str(&doc.map_name);
     s.push_str("_tiles = dictionary {");
-    s.push_str(&render_tiles_dict(&doc.tiles));
+    s.push_str(&merge_and_render_tiles(&doc.tile_entries_raw, &doc.tiles));
     s.push_str("}\n");
     s
 }
@@ -995,6 +1073,45 @@ mod tests {
             again.tiles.get(&'#').map(String::as_str),
             Some("examples/assets/wall.png")
         );
+    }
+
+    const MIXED_DICT: &str = "import gamekit\n\
+        level = tilemap(cell_size: 32, rows: [\"AB\"], solid_tiles: [\"#\"])\n\
+        level_tiles = dictionary {\n    \"#\": gray,\n    \"B\": \"old.png\",\n}\n";
+
+    #[test]
+    fn loads_dictionary_with_color_entries() {
+        let doc = load_from_source(MIXED_DICT).unwrap();
+        // The color entry isn't an editor-managed image, but it must not break loading.
+        assert!(!doc.tiles.contains_key(&'#'));
+        assert_eq!(doc.tiles.get(&'B').map(String::as_str), Some("old.png"));
+        assert_eq!(doc.tile_entries_raw.len(), 2);
+    }
+
+    #[test]
+    fn save_merges_and_preserves_unmanaged_entries() {
+        let mut doc = load_from_source(MIXED_DICT).unwrap();
+        // User drops a new image on B and a fresh one on A; leaves `#` alone.
+        doc.tiles.insert('B', "new.png".into());
+        doc.tiles.insert('A', "a.png".into());
+        let out = apply_to_source(MIXED_DICT, &doc).unwrap();
+        assert!(out.contains("\"#\": gray"), "color entry dropped:\n{out}");
+        assert!(out.contains("\"B\": \"new.png\""), "B not replaced:\n{out}");
+        assert!(out.contains("\"A\": \"a.png\""), "A not added:\n{out}");
+        assert!(!out.contains("old.png"), "stale B path kept:\n{out}");
+        let again = load_from_source(&out).unwrap();
+        assert_eq!(again.tiles.get(&'A').map(String::as_str), Some("a.png"));
+        assert_eq!(again.tiles.get(&'B').map(String::as_str), Some("new.png"));
+        assert!(!again.tiles.contains_key(&'#'));
+    }
+
+    #[test]
+    fn sidecar_keeps_color_entries_through_migration() {
+        let doc = load_from_source(MIXED_DICT).unwrap();
+        let side = render_sidecar(&doc);
+        assert!(side.contains("\"#\": gray"));
+        assert!(side.contains("\"B\": \"old.png\""));
+        assert!(load_from_source(&side).is_ok());
     }
 
     #[test]

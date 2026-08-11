@@ -49,7 +49,7 @@ Every example under [`examples/`](../examples/) is listed in
 | Doc | Use it when… |
 |-----|----------------|
 | [**Examples index**](../examples/README.md) | Every runnable sample, grouped by topic |
-| [**Cheatsheet**](cheatsheet.md) | You need a one-page reminder of syntax |
+| [**Cheatsheet**](../CHEATSHEET.md) | You need a dense, searchable syntax reference |
 | [**Language reference**](language-reference.md) | You want the full story (types, stdlib, game/UI APIs) |
 | [**Troubleshooting**](troubleshooting.md) | Errors, old binaries, or “why doesn’t this run?” |
 | [Getting started](../GETTING-STARTED.md) | Install / PATH / VS Code setup |

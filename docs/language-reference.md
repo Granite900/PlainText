@@ -4,7 +4,7 @@ PlainText is a small language designed to read like plain English. This guide is
 lookup** for syntax, types, the standard library, games, and UI.
 
 **New here?** Start with the [lesson path](README.md) instead — then come back when you need
-detail. Keep the [cheatsheet](cheatsheet.md) open while you code.
+detail. Keep the [cheatsheet](../CHEATSHEET.md) open while you code.
 
 It assumes you can run programs with `plaintext run yourfile.pt` (version **2.8.0+**).
 

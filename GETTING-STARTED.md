@@ -129,7 +129,7 @@ You can also build the `.vsix` from that folder if you are developing from a clo
 
 - **[docs/README.md](docs/README.md)** — start here (lesson map, ~60–90 minutes)
 - **[docs/learn/](docs/learn/)** — teacher-style lessons (01 → 14) with exercises
-- **[docs/cheatsheet.md](docs/cheatsheet.md)** — one-page syntax reminder
+- **[CHEATSHEET.md](CHEATSHEET.md)** — dense, searchable syntax reference
 - **[docs/language-reference.md](docs/language-reference.md)** — full lookup guide
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** — common errors and fixes
 - **[examples/](examples/)** — runnable programs ([index](examples/README.md))

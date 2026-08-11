@@ -81,4 +81,4 @@ Some machines block freshly built `--release` binaries. Try:
 1. `plaintext check yourfile.pt` and read the hint under the error.
 2. Compare with a nearby file in [`examples/`](../examples/)
    ([index](../examples/README.md)).
-3. Skim the [cheatsheet](cheatsheet.md) and the matching [lesson](README.md).
+3. Skim the [cheatsheet](../CHEATSHEET.md) and the matching [lesson](README.md).

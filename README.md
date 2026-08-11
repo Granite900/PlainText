@@ -117,6 +117,7 @@ See **[`examples/README.md`](examples/README.md)** for the full index. Highlight
 | [`examples/list_tools.pt`](examples/list_tools.pt) | Multi-file `import` + list tools |
 | [`examples/catch.pt`](examples/catch.pt) | Complete arcade game |
 | [`examples/platformer.pt`](examples/platformer.pt) | `import gamekit` platformer |
+| [`examples/enemies.pt`](examples/enemies.pt) | Spawn enemy bodies in a list, `world.remove` on death |
 | [`examples/tilemap.pt`](examples/tilemap.pt) | Text-row tilemap levels + menu/play screen |
 | [`examples/form.pt`](examples/form.pt) | Desktop form UI |
 | [`examples/scroll_list.pt`](examples/scroll_list.pt) | Scroll, list, dropdown, multiline text |
@@ -132,7 +133,7 @@ See **[`examples/README.md`](examples/README.md)** for the full index. Highlight
 
 1. **[docs/README.md](docs/README.md)** — start here (lesson map)
 2. **[docs/learn/](docs/learn/)** — teacher-style lessons (hello → games, UI, and neural nets)
-3. **[docs/cheatsheet.md](docs/cheatsheet.md)** — one-page syntax reminder
+3. **[CHEATSHEET.md](CHEATSHEET.md)** — dense, searchable syntax reference
 4. **[docs/language-reference.md](docs/language-reference.md)** — full reference
 5. **[docs/troubleshooting.md](docs/troubleshooting.md)** — common errors (old binary, `import math`, …)
 

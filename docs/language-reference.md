@@ -863,12 +863,15 @@ level = tilemap(cell_size: 32, rows: [
 world.add_tilemap(level, solid_tiles: ["#"])
 ch = tile_at(level, 2, 1)          // "P", or nothing if out of range
 draw_tilemap(level, tile_colors: dictionary { "#": gray, ".": darkgray })
+draw_tilemap(level, tile_images: dictionary { "#": "assets/wall.png" })  // PNG per tile
 ```
 
 Fields: `cell_size`, `width`, `height`. Method: `tile_at(col, row)`. Optional
 `solid_tiles:` on `tilemap(...)` lets you `world.add(level)` instead.
-`draw_tilemap` fills each known character with a solid color (sprite-sheet tiles are out of
-scope for now).
+`draw_tilemap` fills each known character with a solid **color**, or with a PNG when you pass
+`tile_images:` (each image is stretched to `cell_size`). A dictionary value that's a text path
+is drawn as an image, a color value as a rectangle — so the editor's `<map>_tiles` dictionary
+can be passed straight to `tile_images:`.
 
 **Scenes.** There is no scene-graph API. Switch screens with a variable
 (`screen = "menu"` / `"play"`) and `if` branches inside `on update` / `on draw` — see

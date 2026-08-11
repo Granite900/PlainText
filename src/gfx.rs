@@ -253,6 +253,8 @@ pub struct GfxBridge {
     pub sprite_sizes: HashMap<usize, (i32, i32)>,
     /// Cell size for sprite-sheet ids (`cell_width`, `cell_height`).
     pub sheet_meta: HashMap<usize, (i32, i32)>,
+    /// Sprite id reused per image path (so tilemap tiles load once, not per frame).
+    tile_sprite_ids: HashMap<String, usize>,
     pub sound_loads: Vec<(usize, String)>,
     pub sound_cmds: Vec<SoundCmd>,
     pub music_loads: Vec<(usize, String)>,
@@ -283,6 +285,7 @@ impl GfxBridge {
             sprite_loads: Vec::new(),
             sprite_sizes: HashMap::new(),
             sheet_meta: HashMap::new(),
+            tile_sprite_ids: HashMap::new(),
             sound_loads: Vec::new(),
             sound_cmds: Vec::new(),
             music_loads: Vec::new(),
@@ -310,6 +313,17 @@ impl GfxBridge {
         let id = self.next_sprite_id;
         self.next_sprite_id += 1;
         self.sprite_loads.push((id, path));
+        id
+    }
+
+    /// Sprite id for an image path, loading (and caching) it the first time.
+    /// Used by `draw_tilemap` so the same tile image isn't re-queued each frame.
+    pub fn sprite_for_path(&mut self, path: &str) -> usize {
+        if let Some(&id) = self.tile_sprite_ids.get(path) {
+            return id;
+        }
+        let id = self.queue_sprite(path.to_string());
+        self.tile_sprite_ids.insert(path.to_string(), id);
         id
     }
 

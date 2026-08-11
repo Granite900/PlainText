@@ -3159,7 +3159,7 @@ impl Interpreter {
                 if args.is_empty() || args.len() > 2 {
                     return Err(Diagnostic::new(
                         span,
-                        "draw_tilemap takes a tilemap and tile_colors: dictionary { \"#\": gray }",
+                        "draw_tilemap takes a tilemap and tile_colors: / tile_images: dictionary",
                     ));
                 }
                 let map = match &args[0] {
@@ -3171,36 +3171,57 @@ impl Interpreter {
                         ));
                     }
                 };
-                let colors = match args.get(1) {
+                // Per-character styling. A value that's a Text is an image path
+                // (drawn as a sprite); anything else is a color (drawn as a rect).
+                // Accept `tile_colors:` / `tile_images:` named args (merged), or a
+                // bare dictionary whose values may be either.
+                let mut style = PtMap::new();
+                match args.get(1) {
                     Some(Value::Dictionary(m)) => {
-                        if let Some(inner) = m.borrow().get(&MapKey::Text("tile_colors".into())) {
-                            match inner {
-                                Value::Dictionary(d) => d,
-                                other => {
-                                    return Err(Diagnostic::new(
-                                        span,
-                                        format!(
-                                            "tile_colors needs a dictionary, got a {}",
-                                            other.type_name()
-                                        ),
-                                    ));
-                                }
+                        let mb = m.borrow();
+                        let named: Vec<Value> = [
+                            mb.get(&MapKey::Text("tile_colors".into())),
+                            mb.get(&MapKey::Text("tile_images".into())),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .collect();
+                        if named.is_empty() {
+                            for (k, v) in &mb.entries {
+                                style.set(k.clone(), v.clone());
                             }
                         } else {
-                            m.clone()
+                            for src in named {
+                                match src {
+                                    Value::Dictionary(d) => {
+                                        for (k, v) in &d.borrow().entries {
+                                            style.set(k.clone(), v.clone());
+                                        }
+                                    }
+                                    other => {
+                                        return Err(Diagnostic::new(
+                                            span,
+                                            format!(
+                                                "tile_colors / tile_images need a dictionary, got a {}",
+                                                other.type_name()
+                                            ),
+                                        ));
+                                    }
+                                }
+                            }
                         }
                     }
                     Some(other) => {
                         return Err(Diagnostic::new(
                             span,
                             format!(
-                                "draw_tilemap colors need a dictionary, got a {}",
+                                "draw_tilemap styling needs a dictionary, got a {}",
                                 other.type_name()
                             ),
                         ));
                     }
-                    None => Rc::new(RefCell::new(PtMap::new())),
-                };
+                    None => {}
+                }
                 let gfx = self.gfx.as_ref().ok_or_else(|| {
                     Diagnostic::new(span, "draw_tilemap only works inside a game window")
                 })?;
@@ -3211,18 +3232,33 @@ impl Interpreter {
                         if ch == ' ' {
                             continue;
                         }
-                        let key = MapKey::Text(ch.to_string());
-                        let Some(color_v) = colors.borrow().get(&key) else {
+                        let Some(v) = style.get(&MapKey::Text(ch.to_string())) else {
                             continue;
                         };
-                        let color = self.as_color(&color_v, span)?;
-                        g.draw.push(crate::gfx::DrawCmd::Rect {
-                            x: tx as f32 * cell,
-                            y: ty as f32 * cell,
-                            w: cell,
-                            h: cell,
-                            color,
-                        });
+                        let x = tx as f32 * cell;
+                        let y = ty as f32 * cell;
+                        match v {
+                            Value::Text(path) => {
+                                let id = g.sprite_for_path(path.as_str());
+                                g.draw.push(crate::gfx::DrawCmd::SpriteRect {
+                                    id,
+                                    x,
+                                    y,
+                                    w: cell,
+                                    h: cell,
+                                });
+                            }
+                            other => {
+                                let color = self.as_color(&other, span)?;
+                                g.draw.push(crate::gfx::DrawCmd::Rect {
+                                    x,
+                                    y,
+                                    w: cell,
+                                    h: cell,
+                                    color,
+                                });
+                            }
+                        }
                     }
                 }
                 Ok(Value::Nothing)

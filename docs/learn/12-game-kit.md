@@ -82,6 +82,9 @@ world.add_tilemap(level, solid_tiles: ["#"])   // '#' blocks solid bodies
 - Draw with colors (no image needed):  
   `draw_tilemap(level, tile_colors: dictionary { "#": gray, ".": darkgray, "P": green })`  
   Characters missing from the dictionary are skipped.
+- Draw with images — a PNG per character, stretched to `cell_size`:  
+  `draw_tilemap(level, tile_images: level_tiles)` (pass the `<map>_tiles` dictionary the
+  `edit_tilemap` painter fills in). Text values are drawn as images, color values as rectangles.
 - You can also put `solid_tiles: ["#"]` on `tilemap(...)` itself, then `world.add(level)`.
 
 Solid tiles collide the same way static bodies do: land on floors, bump into walls.
@@ -152,11 +155,10 @@ plaintext run examples/tilemap.pt
 
 ## Out of scope (for now)
 
-No slopes, rotation, joints, or **animated / tileset-drawn maps** — collision is still
-axis-aligned boxes and solid character tiles. Character sprite sheets (`load_sprite_sheet` /
-`draw_frame`) are already in [lesson 10](10-games.md); what’s missing here is drawing the
-*tilemap itself* from a sheet instead of `tile_colors`. The `edit_tilemap` painter covers tile
-layout and per-character PNG assignment, but not `body`/`hitbox` placement. Color
-`draw_tilemap` is the debug/teachable path; image tilesets can come later.
+No slopes, rotation, or joints — collision is still axis-aligned boxes and solid character
+tiles. You can draw tiles as solid colors (`tile_colors:`) or a **PNG per character**
+(`tile_images:`, e.g. the `<map>_tiles` dictionary the editor writes); what's still missing is
+drawing the map from a single packed sprite-sheet *atlas*. The `edit_tilemap` painter covers
+tile layout and per-character PNG assignment, but not `body`/`hitbox` placement.
 
 **Previous:** [Desktop UI ←](11-ui.md) · **Next:** [Neural networks →](13-neural-networks.md)

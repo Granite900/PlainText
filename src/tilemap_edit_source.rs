@@ -798,7 +798,8 @@ pub fn sidecar_filename(main: &str) -> String {
 pub fn render_sidecar(doc: &TilemapDoc) -> String {
     let mut s = format!(
         "// Tilemap data for `{name}`, edited by `plaintext edit_tilemap`.\n\
-         // The main program imports this file — keep them together.\n\n",
+         // The main program imports this file — keep them together.\n\n\
+         import gamekit\n\n",
         name = doc.map_name
     );
     s.push_str(&doc.map_name);
@@ -815,14 +816,13 @@ pub fn render_sidecar(doc: &TilemapDoc) -> String {
         s.push_str(", solid_tiles: ");
         s.push_str(&render_solid_list(&doc.solid_tiles));
     }
-    s.push_str(")\n");
-    if !doc.tiles.is_empty() {
-        s.push('\n');
-        s.push_str(&doc.map_name);
-        s.push_str("_tiles = dictionary {");
-        s.push_str(&render_tiles_dict(&doc.tiles));
-        s.push_str("}\n");
-    }
+    s.push_str(")\n\n");
+    // Always emit the tile-image dictionary (empty by default) so it's obvious
+    // where to map characters to PNGs.
+    s.push_str(&doc.map_name);
+    s.push_str("_tiles = dictionary {");
+    s.push_str(&render_tiles_dict(&doc.tiles));
+    s.push_str("}\n");
     s
 }
 
@@ -1069,6 +1069,7 @@ mod tests {
         let mut doc = load_from_source(SAMPLE).unwrap();
         doc.tiles.insert('#', "examples/assets/wall.png".into());
         let side = render_sidecar(&doc);
+        assert!(side.contains("import gamekit"));
         let back = load_from_source(&side).unwrap();
         assert_eq!(back.map_name, "level");
         assert_eq!(back.cell_size, "40");
@@ -1079,6 +1080,16 @@ mod tests {
             back.tiles.get(&'#').map(String::as_str),
             Some("examples/assets/wall.png")
         );
+    }
+
+    #[test]
+    fn render_sidecar_always_has_import_and_dictionary() {
+        let doc = load_from_source(SAMPLE).unwrap(); // no tile images
+        let side = render_sidecar(&doc);
+        assert!(side.contains("import gamekit"));
+        assert!(side.contains("level_tiles = dictionary {"));
+        // Still parses as a standalone tilemap file.
+        assert!(load_from_source(&side).is_ok());
     }
 
     #[test]

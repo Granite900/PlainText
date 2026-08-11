@@ -69,6 +69,54 @@ impl TilemapDoc {
     pub fn is_solid(&self, ch: char) -> bool {
         self.solid_tiles.contains(&ch)
     }
+
+    /// Pad every row with `.` so they all reach the current width.
+    fn normalize_width(&mut self) {
+        let w = self.width();
+        for row in &mut self.rows {
+            let len = row.chars().count();
+            if len < w {
+                row.extend(std::iter::repeat('.').take(w - len));
+            }
+        }
+    }
+
+    /// Append a column of `.` on the right.
+    pub fn add_column(&mut self) -> bool {
+        self.normalize_width();
+        for row in &mut self.rows {
+            row.push('.');
+        }
+        true
+    }
+
+    /// Drop the rightmost column, keeping at least one.
+    pub fn remove_column(&mut self) -> bool {
+        if self.width() <= 1 {
+            return false;
+        }
+        self.normalize_width();
+        for row in &mut self.rows {
+            row.pop();
+        }
+        true
+    }
+
+    /// Append an empty row at the bottom.
+    pub fn add_row(&mut self) -> bool {
+        let w = self.width().max(1);
+        self.rows.push(std::iter::repeat('.').take(w).collect());
+        true
+    }
+
+    /// Drop the bottom row, keeping at least one.
+    pub fn remove_row(&mut self) -> bool {
+        if self.rows.len() <= 1 {
+            return false;
+        }
+        self.rows.pop();
+        true
+    }
 }
 
 /// Starter snippet inserted when the file has no tilemap yet.
@@ -772,6 +820,44 @@ mod tests {
         assert!(out.contains("solid_tiles: [\"#\", \".\"]") || out.contains("\".\""));
         let again = load_from_source(&out).unwrap();
         assert!(again.is_solid('.'));
+    }
+
+    #[test]
+    fn resize_adds_and_removes_columns_and_rows() {
+        let mut doc = load_from_source(SAMPLE).unwrap(); // 3 rows, width 4
+        assert_eq!((doc.width(), doc.height()), (4, 3));
+        assert!(doc.add_column());
+        assert_eq!(doc.width(), 5);
+        for r in &doc.rows {
+            assert_eq!(r.chars().count(), 5);
+        }
+        assert!(doc.add_row());
+        assert_eq!(doc.height(), 4);
+        assert_eq!(doc.rows.last().unwrap(), ".....");
+        assert!(doc.remove_column());
+        assert_eq!(doc.width(), 4);
+        assert!(doc.remove_row());
+        assert_eq!(doc.height(), 3);
+    }
+
+    #[test]
+    fn resize_keeps_a_minimum_of_one() {
+        let src = "\nm = tilemap(cell_size: 8, rows: [\"#\"])\n";
+        let mut doc = load_from_source(src).unwrap();
+        assert_eq!((doc.width(), doc.height()), (1, 1));
+        assert!(!doc.remove_column());
+        assert!(!doc.remove_row());
+        assert_eq!((doc.width(), doc.height()), (1, 1));
+    }
+
+    #[test]
+    fn resized_grid_survives_round_trip() {
+        let mut doc = load_from_source(SAMPLE).unwrap();
+        doc.add_row();
+        doc.add_column();
+        let out = apply_to_source(SAMPLE, &doc).unwrap();
+        let again = load_from_source(&out).unwrap();
+        assert_eq!((again.width(), again.height()), (5, 4));
     }
 
     #[test]

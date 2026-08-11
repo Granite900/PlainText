@@ -876,14 +876,14 @@ scope for now).
 
 **Editor.** `plaintext edit_tilemap <file.pt>` opens a paint window that rewrites that file’s
 `tilemap` rows / solids and a nearby `<name>_tiles` dictionary (one PNG path per character).
-It does not edit bodies or hitboxes.
+Resize the grid with the **+ / −** column and row buttons. It does not edit bodies or hitboxes.
 
 **Drawing.** `draw_body(body, color)`, `draw_hitbox(hitbox, color)`, `draw_hitboxes(world)`,
 `draw_tilemap(map, tile_colors: …)`.
 
 **Input.** `pressed("jump")` — edge-trigger with aliases (`jump` → space/up/w).
 
-**Out of scope.** Slopes, tile animation, a level editor, image tilesets.
+**Out of scope.** Slopes, tile animation, image tilesets.
 
 See [`examples/platformer.pt`](../examples/platformer.pt) (hold **H** to outline hitboxes),
 [`examples/tilemap.pt`](../examples/tilemap.pt), and [lesson 12](learn/12-game-kit.md).

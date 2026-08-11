@@ -18,6 +18,16 @@ const LEFT: i32 = 160;
 const TOP: i32 = 56;
 const CELL_VIEW: i32 = 28;
 
+// Grid-size buttons in the left panel: (x, y, w, h).
+const COL_MINUS: (i32, i32, i32, i32) = (16, 512, 30, 26);
+const COL_PLUS: (i32, i32, i32, i32) = (52, 512, 30, 26);
+const ROW_MINUS: (i32, i32, i32, i32) = (16, 568, 30, 26);
+const ROW_PLUS: (i32, i32, i32, i32) = (52, 568, 30, 26);
+
+fn in_rect(mx: i32, my: i32, r: (i32, i32, i32, i32)) -> bool {
+    mx >= r.0 && mx < r.0 + r.2 && my >= r.1 && my < r.1 + r.3
+}
+
 struct EditorState {
     path: PathBuf,
     source: String,
@@ -253,6 +263,7 @@ fn handle_input(rl: &mut RaylibHandle, thread: &RaylibThread, state: &mut Editor
             revert(state);
             reload_textures(rl, thread, state);
         }
+        resize_click(mx, my, state);
     }
 
     // Grid paint (not while panning / Space held)
@@ -292,6 +303,27 @@ fn save_button_hit(mx: i32, my: i32) -> bool {
 
 fn revert_button_hit(mx: i32, my: i32) -> bool {
     mx >= 16 && mx < 140 && my >= 48 && my < 76
+}
+
+/// Handle a click on the +/- column and row buttons.
+fn resize_click(mx: i32, my: i32, state: &mut EditorState) {
+    let changed = if in_rect(mx, my, COL_PLUS) {
+        state.doc.add_column()
+    } else if in_rect(mx, my, COL_MINUS) {
+        state.doc.remove_column()
+    } else if in_rect(mx, my, ROW_PLUS) {
+        state.doc.add_row()
+    } else if in_rect(mx, my, ROW_MINUS) {
+        state.doc.remove_row()
+    } else {
+        return;
+    };
+    if changed {
+        state.dirty = true;
+        state.status = format!("grid is {}×{}", state.doc.width(), state.doc.height());
+    } else {
+        state.status = "grid must stay at least 1×1".into();
+    }
 }
 
 fn grid_cell(mx: i32, my: i32, state: &EditorState) -> Option<(usize, usize)> {
@@ -391,6 +423,15 @@ fn draw_frame(rl: &mut RaylibHandle, thread: &RaylibThread, state: &EditorState)
     // Grid (clipped to the map viewport; pan + zoom applied).
     let cols = state.doc.width();
     let rows = state.doc.height();
+
+    // Grid-size controls (left panel, below the palette).
+    d.draw_text("Grid size", 16, 476, 18, Color::LIGHTGRAY);
+    d.draw_text(&format!("Columns: {cols}"), 16, 500, 16, Color::WHITE);
+    draw_button(&mut d, COL_MINUS.0, COL_MINUS.1, COL_MINUS.2, COL_MINUS.3, "-", Color::new(90, 90, 110, 255));
+    draw_button(&mut d, COL_PLUS.0, COL_PLUS.1, COL_PLUS.2, COL_PLUS.3, "+", Color::new(60, 120, 150, 255));
+    d.draw_text(&format!("Rows: {rows}"), 16, 546, 16, Color::WHITE);
+    draw_button(&mut d, ROW_MINUS.0, ROW_MINUS.1, ROW_MINUS.2, ROW_MINUS.3, "-", Color::new(90, 90, 110, 255));
+    draw_button(&mut d, ROW_PLUS.0, ROW_PLUS.1, ROW_PLUS.2, ROW_PLUS.3, "+", Color::new(60, 120, 150, 255));
     let cell = cell_px(state.zoom);
     let view_w = (win_w - LEFT).max(1);
     let view_h = (win_h - TOP).max(1);

@@ -111,9 +111,10 @@ plaintext edit_tilemap examples/tilemap.pt
 ```
 
 Opens a window where you paint the map, toggle solids (**S**), and drop a **PNG** onto the
-window to assign it to the selected character. **Pan** with middle-mouse drag (or Space +
-drag), **zoom** with the mouse wheel, and nudge with the arrow keys. **Save** rewrites the
-`.pt` file in place:
+window to assign it to the selected character. Resize the grid with the **+ / −** buttons for
+**Columns** and **Rows** in the left panel. **Pan** with middle-mouse drag (or Space + drag),
+**zoom** with the mouse wheel, and nudge with the arrow keys. **Save** rewrites the `.pt` file
+in place:
 
 - updates that map’s `rows` (and `solid_tiles`, wherever they already live)
 - creates/updates a nearby `level_tiles = dictionary { "#": "path.png", ... }`  

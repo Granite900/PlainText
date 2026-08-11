@@ -28,6 +28,7 @@ Paths like `examples/assets/...` and `examples/data/...` are relative to **where
 |------|---------------|
 | [`catch.pt`](catch.pt) | Complete arcade loop — score, lives, restart |
 | [`platformer.pt`](platformer.pt) | `import gamekit` — gravity, platforms, attack hitboxes (hold **H**) |
+| [`enemies.pt`](enemies.pt) | Spawn several enemy bodies in a list, `world.remove` each on death |
 | [`tilemap.pt`](tilemap.pt) | Text-row tilemap, solid tiles, menu ↔ play via a `screen` variable (`plaintext edit_tilemap` to paint) |
 | [`counter.pt`](counter.pt) | Desktop UI — buttons and a live label |
 | [`form.pt`](form.pt) | Settings form — `text_field`, `checkbox`, `slider`, `image`, `bind:` |

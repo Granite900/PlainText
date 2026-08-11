@@ -52,6 +52,36 @@ if overlaps(hurt, enemy_hurt) {
 `world.hits` fires **once** while the attack stays active and overlapping; it can fire again
 after `attack.active` becomes false. Use `overlaps` when you want every frame.
 
+## Many enemies, and removing the dead ones
+
+Make copies of an enemy by calling `body(...)` in a loop and keeping them in a list. When one
+dies, `world.remove(it)` takes it out of the physics world, and you drop it from the list too:
+
+```plaintext
+enemies: body list = []
+n = 0
+while n is less than 5 {
+    e = body(x: 70 + n * 120, y: 40, width: 40, height: 40, solid: true)
+    world.add(e)
+    enemies.add(e)
+    n = n + 1
+}
+
+// later, when some die — keep the survivors:
+survivors: body list = []
+for every e in enemies {
+    if is_dead(e) {
+        world.remove(e)      // stop simulating / colliding it
+    } else {
+        survivors.add(e)
+    }
+}
+enemies = survivors
+```
+
+`world.remove` works on a body or a hitbox. Rebuilding the list (rather than removing while you
+loop over it) keeps the iteration simple. Full demo: [`examples/enemies.pt`](../../examples/enemies.pt).
+
 ## Drawing helpers
 
 ```plaintext

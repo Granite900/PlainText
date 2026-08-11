@@ -1185,7 +1185,7 @@ impl Checker {
                 }
             },
             Ty::PhysicsWorld => match name {
-                "add" | "add_tilemap" | "step" | "sync_hitboxes" => Ty::Nothing,
+                "add" | "remove" | "add_tilemap" | "step" | "sync_hitboxes" => Ty::Nothing,
                 "hits" => Ty::Bool,
                 _ => {
                     self.error(span, format!("a physics world has no method `{}`", name), None);
@@ -1339,7 +1339,7 @@ impl Checker {
             },
             Ty::PhysicsWorld => match name {
                 "gravity" => Ty::Number,
-                "add" | "add_tilemap" | "step" | "hits" | "sync_hitboxes" => Ty::Function(Rc::new(FnSig {
+                "add" | "remove" | "add_tilemap" | "step" | "hits" | "sync_hitboxes" => Ty::Function(Rc::new(FnSig {
                     id: None, params: vec![Ty::Dynamic], required: 0,
                 })),
                 _ => {

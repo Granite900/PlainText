@@ -167,10 +167,13 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v2.11.3`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
+(`v2.11.4`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## What's new
+
+**2.11.4** — `world.remove(body_or_hitbox)` takes something back out of the physics world (spawn
+several enemies in a list, remove each when it dies). See [`examples/enemies.pt`](examples/enemies.pt).
 
 **2.11.3** — the tilemap editor now **merges** the tile dictionary on save: only the characters
 you changed are added/replaced, and hand-written entries (like a `"#": gray` color) are kept

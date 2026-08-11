@@ -1075,7 +1075,7 @@ impl Interpreter {
                     span,
                     format!("a physics world has no field `{}`", name),
                 )
-                .with_hint("use methods: .add, .add_tilemap, .step, .hits, .sync_hitboxes")),
+                .with_hint("use methods: .add, .remove, .add_tilemap, .step, .hits, .sync_hitboxes")),
             },
             Value::Tilemap(m) => self.get_tilemap_field(m, name, span),
             _ => Err(Diagnostic::new(
@@ -1834,6 +1834,27 @@ impl Interpreter {
                 }
                 Ok(Value::Nothing)
             }
+            "remove" => {
+                self.expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Body(b) => {
+                        world.borrow_mut().remove_body(b);
+                    }
+                    Value::Hitbox(h) => {
+                        world.borrow_mut().remove_hitbox(h);
+                    }
+                    other => {
+                        return Err(Diagnostic::new(
+                            span,
+                            format!(
+                                "world.remove needs a body or hitbox, got a {}",
+                                other.type_name()
+                            ),
+                        ));
+                    }
+                }
+                Ok(Value::Nothing)
+            }
             "add_tilemap" => {
                 // map, solid_tiles: ["#"]  → args [map, options-dict] or just [map]
                 if args.is_empty() || args.len() > 2 {
@@ -1879,7 +1900,7 @@ impl Interpreter {
                 }
             }
             _ => Err(Diagnostic::new(span, format!("a physics world has no method `{}`", name))
-                .with_hint("worlds have add, add_tilemap, step, hits, sync_hitboxes")),
+                .with_hint("worlds have add, remove, add_tilemap, step, hits, sync_hitboxes")),
         }
     }
 

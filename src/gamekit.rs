@@ -274,6 +274,22 @@ impl World {
         }
     }
 
+    /// Remove a body from the world. Returns true if it was present.
+    pub fn remove_body(&mut self, body: &Rc<RefCell<Body>>) -> bool {
+        let before = self.bodies.len();
+        self.bodies.retain(|b| !Rc::ptr_eq(b, body));
+        self.bodies.len() != before
+    }
+
+    /// Remove a hitbox from the world, dropping any pending hit records for it.
+    pub fn remove_hitbox(&mut self, hb: &Rc<RefCell<Hitbox>>) -> bool {
+        let ptr = Rc::as_ptr(hb) as usize;
+        self.hit_pairs.retain(|(a, h)| *a != ptr && *h != ptr);
+        let before = self.hitboxes.len();
+        self.hitboxes.retain(|h| !Rc::ptr_eq(h, hb));
+        self.hitboxes.len() != before
+    }
+
     pub fn hitboxes(&self) -> &[Rc<RefCell<Hitbox>>] {
         &self.hitboxes
     }
@@ -412,6 +428,24 @@ mod tests {
         let h = hero.borrow();
         assert!(h.on_ground, "expected on ground, y={}", h.y);
         assert!((h.y + h.height - 200.0).abs() < 0.5, "y={}", h.y);
+    }
+
+    #[test]
+    fn remove_body_takes_it_out_of_simulation() {
+        let mut world = World::new(2000.0);
+        let a = Rc::new(RefCell::new(Body::new(0.0, 0.0, 20.0, 20.0)));
+        let b = Rc::new(RefCell::new(Body::new(100.0, 0.0, 20.0, 20.0)));
+        world.add_body(a.clone());
+        world.add_body(b.clone());
+        assert!(world.remove_body(&a));
+        assert!(!world.remove_body(&a)); // already gone
+        // `a` no longer falls (it's out of the world); `b` still does.
+        let a_y = a.borrow().y;
+        for _ in 0..30 {
+            world.step(1.0 / 60.0);
+        }
+        assert_eq!(a.borrow().y, a_y, "removed body should not be simulated");
+        assert!(b.borrow().y > 0.0, "remaining body should still fall");
     }
 
     #[test]

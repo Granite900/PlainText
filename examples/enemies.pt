@@ -1,0 +1,59 @@
+// Spawn several copies of an enemy, then remove each one when it dies.
+// Click an enemy to kill it: it leaves the physics world (world.remove) and
+// the list, so it stops updating and drawing.
+// Run with:  plaintext run examples/enemies.pt
+
+import gamekit
+
+world = physics_world(gravity: 900)
+
+floor = body(x: 0, y: 440, width: 640, height: 40, solid: true, static: true)
+world.add(floor)
+
+// Make 5 copies of an enemy and keep them in a list.
+enemies: body list = []
+n = 0
+while n is less than 5 {
+    e = body(x: 70 + n * 120, y: 40, width: 40, height: 40, solid: true)
+    world.add(e)
+    enemies.add(e)
+    n = n + 1
+}
+
+score = 0
+
+make function called point_in(bx, by, bw, bh, px, py) {
+    return px is at least bx and px is at most bx + bw and py is at least by and py is at most by + bh
+}
+
+game "Click the enemies" (width: 640, height: 480) {
+    on update(delta) {
+        world.step(delta)
+
+        if mouse_pressed() {
+            // Keep the survivors; remove whichever enemy was clicked.
+            survivors: body list = []
+            killed = false
+            for every e in enemies {
+                if not killed and point_in(e.x, e.y, e.width, e.height, mouse_x(), mouse_y()) {
+                    world.remove(e)          // take it out of the physics world
+                    increase score by 1
+                    killed = true
+                } else {
+                    survivors.add(e)
+                }
+            }
+            enemies = survivors              // drop the dead one from the list too
+        }
+    }
+
+    on draw() {
+        clear_screen(rgb(30, 34, 44))
+        draw_body(floor, darkgray)
+        for every e in enemies {
+            draw_body(e, red)
+        }
+        draw_text("Click an enemy to kill it", 16, 16, 22, white)
+        draw_text("left: {enemies.length()}   killed: {score}", 16, 44, 18, skyblue)
+    }
+}

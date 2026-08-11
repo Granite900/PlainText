@@ -844,6 +844,12 @@ world.step(delta)
 if pressed("jump") { hero.jump(700) }
 ```
 
+**World.** `world.add(x)` puts a body, hitbox, or tilemap into the simulation; `world.remove(x)`
+takes a body or hitbox back out (use it when an enemy dies). Spawn several enemies by calling
+`body(...)` in a loop and keeping them in a list, then remove and drop the dead ones — see
+[`examples/enemies.pt`](../examples/enemies.pt). Also `world.step(delta)`, `world.add_tilemap(map,
+solid_tiles: […])`, `world.hits(attack, hurt)`.
+
 **Bodies.** Fields: `x`, `y`, `width`, `height`, `vx`, `vy`, `solid`, `static`, `on_ground`,
 `center_x`, `center_y`. Methods: `move(dx, dy)`, `set_velocity(vx, vy)`, `bump(vx, vy)`,
 `jump(speed)` (optional second arg / `force: true` to jump in mid-air).

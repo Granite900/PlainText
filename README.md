@@ -167,10 +167,13 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v2.10.2`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
+(`v2.10.3`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## What's new
+
+**2.10.3** — tilemap editor: assigning a PNG from outside the project folder now saves a clean
+path (no stray `//?/` Windows prefix), so the tile image loads.
 
 **2.10.2** — tilemap editor **+ / −** buttons to add or remove columns and rows.
 

@@ -745,12 +745,26 @@ fn escape_pt_string(s: &str) -> String {
 
 /// Turn an absolute dropped path into a `/`-separated path relative to `base` when possible.
 pub fn relativize_path(path: &std::path::Path, base: &std::path::Path) -> String {
-    let abs = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let base_abs = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
+    let abs = simplify(&path.canonicalize().unwrap_or_else(|_| path.to_path_buf()));
+    let base_abs = simplify(&base.canonicalize().unwrap_or_else(|_| base.to_path_buf()));
     if let Ok(rel) = abs.strip_prefix(&base_abs) {
         return rel.to_string_lossy().replace('\\', "/");
     }
     abs.to_string_lossy().replace('\\', "/")
+}
+
+/// Drop Windows' `\\?\` verbatim prefix that `canonicalize()` adds, so an
+/// absolute fallback path reads as `C:/foo` rather than the unusable `//?/C:/foo`.
+/// No-op for non-verbatim paths and on other platforms.
+fn simplify(path: &std::path::Path) -> std::path::PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return std::path::PathBuf::from(format!(r"\\{}", rest));
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        return std::path::PathBuf::from(rest);
+    }
+    path.to_path_buf()
 }
 
 #[cfg(test)]
@@ -858,6 +872,24 @@ mod tests {
         let out = apply_to_source(SAMPLE, &doc).unwrap();
         let again = load_from_source(&out).unwrap();
         assert_eq!((again.width(), again.height()), (5, 4));
+    }
+
+    #[test]
+    fn simplify_strips_windows_verbatim_prefix() {
+        // The `\\?\` prefix canonicalize() adds on Windows must not survive into
+        // a saved tile path (it used to render as the unusable `//?/C:/...`).
+        assert_eq!(
+            simplify(std::path::Path::new(r"\\?\C:\a\b.png")).to_string_lossy(),
+            r"C:\a\b.png"
+        );
+        assert_eq!(
+            simplify(std::path::Path::new(r"\\?\UNC\srv\share\x.png")).to_string_lossy(),
+            r"\\srv\share\x.png"
+        );
+        assert_eq!(
+            simplify(std::path::Path::new("plain/x.png")).to_string_lossy(),
+            "plain/x.png"
+        );
     }
 
     #[test]

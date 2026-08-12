@@ -41,7 +41,7 @@ plaintext version
 
 **From a release zip (easiest)**
 
-The Windows release zip includes `plaintext-lang.vsix`. In a terminal:
+Every release zip includes `plaintext-lang.vsix`. In a terminal:
 
 ```bash
 code --install-extension path/to/plaintext-lang.vsix
@@ -55,7 +55,7 @@ Then reload VS Code (**Developer: Reload Window**).
 cd editors/vscode
 npm install
 npx @vscode/vsce package --allow-missing-repository
-code --install-extension plaintext-lang-2.8.0.vsix
+code --install-extension plaintext-lang-*.vsix
 ```
 
 Reload VS Code when it asks.

@@ -106,8 +106,7 @@ jobs:
             fi
           } > "$STAGE/START-HERE.txt"
 
-      - name: Package VS Code extension (once, on Windows)
-        if: runner.os == 'Windows'
+      - name: Package VS Code extension
         shell: bash
         run: |
           npm install -g @vscode/vsce
@@ -178,6 +177,11 @@ jobs:
             ```
 
             See **GETTING-STARTED.md** and **START-HERE.txt** inside the zip.
+
+            ### Install the VS Code extension
+            Every zip above includes `plaintext-lang.vsix`. In VS Code, open the Extensions view,
+            click the **⋯** menu in its top-right corner, choose **Install from VSIX...**, and
+            select the `plaintext-lang.vsix` file from the zip.
 
             ### macOS Gatekeeper
             If macOS refuses to run the binary the first time:

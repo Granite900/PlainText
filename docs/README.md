@@ -36,7 +36,7 @@ About **70–100 minutes** if you try every exercise.
 | 10 | [Games](learn/10-games.md) | `game`, update/draw, sprites, input, sound & music |
 | 11 | [Desktop UI](learn/11-ui.md) | `window`, buttons, forms, scroll / list / dropdown |
 | 12 | [Game kit](learn/12-game-kit.md) | `import gamekit` — gravity, bodies, hitboxes, tilemaps |
-| 13 | [Neural networks](learn/13-neural-networks.md) | `import ai`, train / predict, datasets, GPU, neuroevolution |
+| 13 | [Neural networks](learn/13-neural-networks.md) | `import ai`, train / predict, CSV & image datasets, GPU, neuroevolution |
 | 14 | [Talking to the web](learn/14-web.md) | `import web` — HTTP, JSON, offline fixtures |
 
 Every example under [`examples/`](../examples/) is listed in

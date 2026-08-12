@@ -54,6 +54,13 @@ print("score: {score}")     // good
 print("score: " + score)    // error
 ```
 
+## A loop never ends / a variable changes for no reason
+
+A same-named variable inside a function reassigns the outer one instead of getting its own copy
+if that name already exists where the function was *defined* (assignment reuses the nearest
+existing binding up the scope chain; see [§5, Loops](language-reference.md#5-loops)). Rename
+one of them — most often a loop counter like `i` reused inside a helper function.
+
 ## Empty list errors
 
 An empty list has no element type to infer. Write one:

@@ -84,6 +84,39 @@ A header row of column names is skipped for you. `read_csv("file.csv")` is the s
 you just want the raw rows of numbers. [`dataset.pt`](../../examples/dataset.pt) trains on a real
 CSV of labelled points, then **scores accuracy on fresh random points** it never trained on.
 
+## Load images from files
+
+A network only takes numbers, so an image has to become a flat list of them first.
+`read_image(path, width:, height:, rgb:)` decodes a PNG/JPG/BMP/… file, resizes it to
+`width` x `height` (both default to `28`), and flattens it into `0..1` numbers — one grayscale
+value per pixel, or three (`r`, `g`, `b`) per pixel if you pass `rgb: true`:
+
+```plaintext
+pixels = read_image("digit.png", width: 28, height: 28)   // 784 numbers
+brain.predict(pixels)
+```
+
+For a whole training set, sort your images into one folder per label and hand the folder to
+`load_image_dataset`:
+
+```text
+digits/
+  cat/   cat1.png  cat2.png  ...
+  dog/   dog1.png  dog2.png  ...
+```
+
+```plaintext
+data = load_image_dataset("digits", width: 28, height: 28)
+examples = data[0]     // one flattened pixel row per image
+answers  = data[1]     // one-hot: folders in alphabetical order → [1, 0], [0, 1], ...
+
+brain = neural_network(inputs: 28 * 28, hidden: [32], outputs: 2)
+brain.train(examples, answers, epochs: 200, optimizer: adam, rate: 0.05)
+```
+
+[`image_dataset.pt`](../../examples/image_dataset.pt) trains a network on a tiny two-class image
+folder this way.
+
 ## Neuroevolution — learning with no answers
 
 Backprop needs the right answer for every example. But how do you train a character to play a
@@ -142,6 +175,7 @@ progress yourself — see the language reference.
 |---------|------|
 | [`learn.pt`](../../examples/learn.pt) | XOR + GPU auto + save / load |
 | [`dataset.pt`](../../examples/dataset.pt) | CSV training + accuracy score |
+| [`image_dataset.pt`](../../examples/image_dataset.pt) | Image-folder training |
 | [`evolve.pt`](../../examples/evolve.pt) | Neuroevolution in a window |
 
 Full index: [`examples/README.md`](../../examples/README.md).
@@ -153,7 +187,8 @@ Full index: [`examples/README.md`](../../examples/README.md).
 | `neural_network` "needs the ai module" | Add `import ai` at the top |
 | Examples and answers don't line up | Same count; match `inputs` / `outputs` widths |
 | Outputs never get close | Scale your answers to the 0–1 range |
-| Expecting images or text | This is a small numeric network — keep inputs numeric and small |
+| Expecting text input | Text isn't supported — turn it into numbers yourself first |
+| Images loading slowly / huge input counts | Keep `width`/`height` small (28x28 is plenty for simple shapes) and skip `rgb: true` unless color matters |
 
 ## That's the tour
 

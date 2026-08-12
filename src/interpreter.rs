@@ -2400,6 +2400,40 @@ impl Interpreter {
                 let an = self.new_list(answers);
                 Ok(self.new_list(vec![ex, an]))
             }
+            Builtin::ReadImage => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(Diagnostic::new(span, "read_image takes a file path and optional settings")
+                        .with_hint("e.g. read_image(\"digit.png\", width: 28, height: 28)"));
+                }
+                let path = self.as_text(&args[0], span)?;
+                let width = self.opt_number(args.get(1), "width", 28.0, span)?.max(1.0) as i32;
+                let height = self.opt_number(args.get(1), "height", 28.0, span)?.max(1.0) as i32;
+                let rgb = self.opt_bool(args.get(1), "rgb", false, span)?;
+                let pixels = self.read_image_pixels(&path, width, height, rgb, span)?;
+                Ok(self.new_list(pixels.into_iter().map(Value::Number).collect()))
+            }
+            Builtin::LoadImageDataset => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(Diagnostic::new(span, "load_image_dataset takes a folder path and optional settings")
+                        .with_hint("e.g. load_image_dataset(\"digits\", width: 28, height: 28)"));
+                }
+                let dir = self.as_text(&args[0], span)?;
+                let width = self.opt_number(args.get(1), "width", 28.0, span)?.max(1.0) as i32;
+                let height = self.opt_number(args.get(1), "height", 28.0, span)?.max(1.0) as i32;
+                let rgb = self.opt_bool(args.get(1), "rgb", false, span)?;
+                let (inputs, targets) = self.load_image_dataset_rows(&dir, width, height, rgb, span)?;
+                let examples: Vec<Value> = inputs
+                    .into_iter()
+                    .map(|row| self.new_list(row.into_iter().map(Value::Number).collect()))
+                    .collect();
+                let answers: Vec<Value> = targets
+                    .into_iter()
+                    .map(|row| self.new_list(row.into_iter().map(Value::Number).collect()))
+                    .collect();
+                let ex = self.new_list(examples);
+                let an = self.new_list(answers);
+                Ok(self.new_list(vec![ex, an]))
+            }
             Builtin::Save => {
                 self.expect_arity("save", &args, 2, span)?;
                 let path = self.as_text(&args[1], span)?;
@@ -3373,6 +3407,84 @@ impl Interpreter {
                 .with_hint("each line should be numbers separated by commas"));
         }
         Ok(rows)
+    }
+
+    /// Decode an image file (PNG/JPG/BMP/…, via raylib's stb_image backend),
+    /// resize it to `width` x `height`, and flatten it to normalized `0..1`
+    /// numbers — one grayscale value per pixel, or three (r, g, b) when `rgb`.
+    fn read_image_pixels(&self, path: &str, width: i32, height: i32, rgb: bool, span: Span) -> Result<Vec<f64>, Diagnostic> {
+        let mut img = raylib::core::texture::Image::load_image(path)
+            .map_err(|e| Diagnostic::new(span, format!("couldn't read image \"{}\": {}", path, e)))?;
+        img.resize(width, height);
+        let colors = img.get_image_data();
+        let mut out = Vec::with_capacity(width as usize * height as usize * if rgb { 3 } else { 1 });
+        for c in colors.iter() {
+            if rgb {
+                out.push(c.r as f64 / 255.0);
+                out.push(c.g as f64 / 255.0);
+                out.push(c.b as f64 / 255.0);
+            } else {
+                // Perceptual (luminance-weighted) grayscale.
+                out.push((0.299 * c.r as f64 + 0.587 * c.g as f64 + 0.114 * c.b as f64) / 255.0);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Build an `[examples, answers]` dataset from a folder of labeled images:
+    /// one subfolder per class (e.g. `digits/cat/*.png`, `digits/dog/*.png`).
+    /// Subfolder names, sorted alphabetically, become one-hot answer columns.
+    fn load_image_dataset_rows(
+        &self,
+        dir: &str,
+        width: i32,
+        height: i32,
+        rgb: bool,
+        span: Span,
+    ) -> Result<(Vec<Vec<f64>>, Vec<Vec<f64>>), Diagnostic> {
+        const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "tga", "psd", "hdr", "pic", "pnm"];
+
+        let mut classes: Vec<String> = std::fs::read_dir(dir)
+            .map_err(|e| Diagnostic::new(span, format!("couldn't read folder \"{}\": {}", dir, e)))?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect();
+        classes.sort();
+        if classes.is_empty() {
+            return Err(Diagnostic::new(span, format!("found no label subfolders in \"{}\"", dir))
+                .with_hint("organize images as folder/label/*.png, one subfolder per class"));
+        }
+
+        let mut examples = Vec::new();
+        let mut answers = Vec::new();
+        for (i, class) in classes.iter().enumerate() {
+            let class_dir = std::path::Path::new(dir).join(class);
+            let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&class_dir)
+                .map_err(|e| Diagnostic::new(span, format!("couldn't read folder \"{}\": {}", class_dir.display(), e)))?
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.is_file()
+                        && p.extension()
+                            .and_then(|ext| ext.to_str())
+                            .is_some_and(|ext| IMAGE_EXTS.contains(&ext.to_lowercase().as_str()))
+                })
+                .collect();
+            files.sort();
+            for path in files {
+                let pixels = self.read_image_pixels(&path.to_string_lossy(), width, height, rgb, span)?;
+                let mut one_hot = vec![0.0; classes.len()];
+                one_hot[i] = 1.0;
+                examples.push(pixels);
+                answers.push(one_hot);
+            }
+        }
+        if examples.is_empty() {
+            return Err(Diagnostic::new(span, format!("found no images in the label subfolders of \"{}\"", dir))
+                .with_hint("supported formats: png, jpg, bmp, gif, tga, psd, hdr, pic, pnm"));
+        }
+        Ok((examples, answers))
     }
 
     fn gfx_or_err(&self, span: Span) -> Result<Rc<RefCell<GfxBridge>>, Diagnostic> {

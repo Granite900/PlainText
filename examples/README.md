@@ -47,6 +47,8 @@ assets there too.
 | [`fetch.pt`](fetch.pt) | `import web` — JSON offline (+ live URL in comments) |
 | [`learn.pt`](learn.pt) | `import ai` — XOR, `device: auto`, save / `load_network` |
 | [`dataset.pt`](dataset.pt) | Train from CSV + accuracy on new points |
+| [`image_dataset.pt`](image_dataset.pt) | Train from a folder of labeled images |
 | [`evolve.pt`](evolve.pt) | Neuroevolution — agents learn to play in a window |
 
-Supporting data: [`fixtures/sample.json`](fixtures/sample.json), [`data/circle.csv`](data/circle.csv).
+Supporting data: [`fixtures/sample.json`](fixtures/sample.json), [`data/circle.csv`](data/circle.csv),
+[`data/shapes/`](data/shapes/).

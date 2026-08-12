@@ -253,6 +253,10 @@ save(value, path)   load(path)   has_save(path)   // missing file loads as nothi
 read_csv(path)                       // rows of numbers (skips 1 header line + `#` lines)
 load_dataset(path, outputs: n)       // → [examples, answers]
 
+// Image files (PNG/JPG/BMP/GIF/TGA/PSD/HDR/PIC/PNM)
+read_image(path, width: 28, height: 28, rgb: false)   // → flat 0..1 pixel numbers
+load_image_dataset(folder, width: 28, height: 28)      // one subfolder per label → [examples, answers]
+
 // Time
 now()      // seconds since 1970
 clock()    // seconds since program start
@@ -418,6 +422,9 @@ brain.save("brain.ai")                // load_network("brain.ai") to reload
 
 data = load_dataset("training.csv", outputs: 1)   // examples=data[0], answers=data[1]
 rows = read_csv("scores.csv")
+
+data = load_image_dataset("digits", width: 28, height: 28)   // one subfolder per label
+pixels = read_image("digit.png", width: 28, height: 28)      // one image → flat 0..1 numbers
 
 // Neuroevolution
 brains = population(count: 100, inputs: 4, hidden: [8], outputs: 2)

@@ -1,0 +1,50 @@
+// Train a network to tell squares from circles apart, then score it on
+// images it never saw during training.
+//
+// examples/data/shapes/{square,circle}/*.bmp holds the training images (one
+// subfolder per label); examples/data/shapes_test/{square,circle}/*.bmp are
+// held out — different sizes than anything in the training set.
+// Run from the repo root:  plaintext run examples/image_dataset.pt
+
+import ai
+
+// Index of the largest value — turns a one-hot output like [0.02, 0.97] into
+// the label index 1.
+make function called argmax(row) {
+    best_i = 0
+    best_v = row[0]
+    idx = 0
+    for every v in row {
+        if v > best_v {
+            best_v = v
+            best_i = idx
+        }
+        increase idx by 1
+    }
+    return best_i
+}
+
+// Folders are read alphabetically, so "circle" -> [1, 0] and "square" -> [0, 1].
+data = load_image_dataset("examples/data/shapes", width: 16, height: 16)
+examples = data[0]
+answers  = data[1]
+print("loaded {examples.length()} training images, {examples[0].length()} pixels each")
+
+brain = neural_network(inputs: 16 * 16, hidden: [16], outputs: 2)
+brain.train(examples, answers, epochs: 4000, optimizer: adam, rate: 0.02)
+
+// Grade on images the network never trained on.
+test = load_image_dataset("examples/data/shapes_test", width: 16, height: 16)
+test_examples = test[0]
+test_answers  = test[1]
+
+correct = 0
+i = 0
+while i < test_examples.length() {
+    prediction = brain.predict(test_examples[i])
+    if argmax(prediction) is argmax(test_answers[i]) {
+        increase correct by 1
+    }
+    increase i by 1
+}
+print("test accuracy: {correct} / {test_examples.length()}")

@@ -1,6 +1,6 @@
 [package]
 name = "plaintext"
-version = "2.11.4"
+version = "2.12.1"
 edition = "2021"
 description = "The PlainText programming language — a readability-first language for desktop UIs and 2D games."
 

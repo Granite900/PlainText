@@ -67,7 +67,7 @@ jobs:
           # Console examples that run to completion (no window, no stdin, no
           # forever-timer). Games/UI (catch, platformer, counter, form, evolve),
           # ask.pt (stdin) and timers.pt (runs forever) are excluded on purpose.
-          for f in basics stdlib list_tools fetch dataset; do
+          for f in basics stdlib list_tools fetch dataset image_dataset; do
             echo "run examples/$f.pt"
             "$BIN" run "examples/$f.pt"
           done

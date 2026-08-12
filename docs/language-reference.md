@@ -259,6 +259,13 @@ Use `break` to leave a loop and `continue` to skip to the next round.
 
 > Note: loops (and `if`) don't create a new scope — a variable you make inside a loop is still
 > there afterward. Only functions start a fresh scope.
+>
+> **Watch reused names across a function call.** `x = value` reassigns the nearest *existing*
+> `x` up the scope chain, and a function's chain leads back to where it was defined — so if a
+> helper function assigns to a variable name that's already in scope where the helper was
+> declared (e.g. a loop counter called `i` both outside and inside the function), the function
+> silently mutates the outer one instead of getting its own. Give loop counters and helper-local
+> variables distinct names (`i` outside, `idx` inside) to avoid it.
 
 ---
 
@@ -775,6 +782,11 @@ examples = data[0]
 answers  = data[1]
 ```
 
+**Image files**: `read_image(path, width:, height:, rgb:)` decodes a PNG/JPG/BMP/… file into a
+flat list of normalized pixel numbers, and `load_image_dataset(folder, width:, height:, rgb:)`
+turns a folder of labeled images (one subfolder per class) straight into `[examples, answers]`.
+See [§16, Neural networks](#16-neural-networks-the-ai-module) for the full picture.
+
 **Time**: `now()` (seconds since 1970), `clock()` (seconds since the program started).
 
 **Input / output**: `print(...)`, `input(prompt)`.
@@ -1026,6 +1038,45 @@ brain.train(data[0], data[1], epochs: 500, optimizer: adam)   // data[0] = examp
 
 A header row of column names is skipped automatically. `read_csv(path)` is the lower-level tool
 if you want the raw rows of numbers to arrange yourself.
+
+**Loading images.** `read_image(path, width:, height:, rgb:)` decodes an image file (PNG, JPG,
+BMP, GIF, TGA, PSD, HDR, PIC, or PNM) into a flat list of `0..1` numbers a network can take as
+input — resized to `width` x `height` (both default to `28`), one grayscale value per pixel
+unless `rgb: true` asks for three (r, g, b) values per pixel instead:
+
+```plaintext
+pixels = read_image("digit.png", width: 28, height: 28)   // 784 numbers, 0..1
+brain.predict(pixels)
+
+colors = read_image("logo.png", width: 16, height: 16, rgb: true)   // 768 numbers (16*16*3)
+```
+
+`load_image_dataset(folder, width:, height:, rgb:)` builds a whole training set from a folder of
+labeled images, one subfolder per class:
+
+```text
+digits/
+  cat/
+    cat1.png
+    cat2.png
+  dog/
+    dog1.png
+    dog2.png
+```
+
+```plaintext
+data = load_image_dataset("digits", width: 28, height: 28)
+examples = data[0]   // one flattened, normalized pixel row per image
+answers  = data[1]   // one-hot: [1, 0] for "cat", [0, 1] for "dog" — folders in alphabetical order
+
+brain = neural_network(inputs: 28 * 28, hidden: [32], outputs: 2)
+brain.train(examples, answers, epochs: 200, optimizer: adam, rate: 0.05)
+```
+
+Subfolder names, sorted alphabetically, decide the answer order — the first folder alphabetically
+is `[1, 0, ...]`, the second is `[0, 1, 0, ...]`, and so on. Non-image files in a subfolder (like
+`.DS_Store`) are skipped automatically. See
+[`examples/image_dataset.pt`](../examples/image_dataset.pt).
 
 **Neuroevolution — learning without answers.** Sometimes there is no "right answer" to train on,
 only a way to score how well something did — how far a character got, how long it survived. For

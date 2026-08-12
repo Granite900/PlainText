@@ -1308,6 +1308,9 @@ impl Checker {
             // read_csv → rows of numbers; load_dataset → [examples, answers].
             ReadCsv => Ty::List(Box::new(Ty::List(Box::new(Ty::Number)))),
             LoadDataset => Ty::List(Box::new(Ty::List(Box::new(Ty::List(Box::new(Ty::Number)))))),
+            // read_image → one flat pixel vector; load_image_dataset → [examples, answers].
+            ReadImage => Ty::List(Box::new(Ty::Number)),
+            LoadImageDataset => Ty::List(Box::new(Ty::List(Box::new(Ty::List(Box::new(Ty::Number)))))),
         }
     }
 

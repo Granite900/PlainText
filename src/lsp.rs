@@ -554,6 +554,7 @@ fn builtin_hover(name: &str) -> Option<String> {
         }
         "read_file" | "write_file" | "append_file" | "file_exists" => "File tools.",
         "read_csv" | "load_dataset" => "Load numeric / ML datasets from disk.",
+        "read_image" | "load_image_dataset" => "Load image files (PNG/JPG/BMP/…) as pixel vectors for ML datasets.",
         "now" | "clock" => "Time helpers.",
         "after" | "every" => "Run a function later / on an interval.",
         "neural_network" | "load_network" | "population" | "evolve" | "best_of" => {
@@ -600,7 +601,8 @@ const KEYWORDS: &[&str] = &[
 const BUILTIN_NAMES: &[&str] = &[
     "print", "input", "exit", "to_text", "to_number", "length", "min", "greatest", "abs", "sqrt",
     "floor", "ceil", "round", "random_between", "pow", "clamp", "sin", "cos", "tan", "read_file",
-    "write_file", "append_file", "file_exists", "read_csv", "load_dataset", "now", "clock", "after",
+    "write_file", "append_file", "file_exists", "read_csv", "load_dataset", "read_image",
+    "load_image_dataset", "now", "clock", "after",
     "every", "clear_screen", "draw_circle", "draw_rectangle", "draw_line", "draw_text", "rgb",
     "rgba", "screen_width", "screen_height", "key_down", "key_pressed", "mouse_x", "mouse_y",
     "mouse_down", "mouse_pressed", "load_sprite", "load_sprite_sheet", "draw_sprite",

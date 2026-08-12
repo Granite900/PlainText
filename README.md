@@ -34,7 +34,7 @@ backed by a Rust interpreter wrapping [Raylib](https://www.raylib.com/).
 - **Games built in.** `game { on update … on draw … }`, drawn natively, with a scrolling **camera**, **sprite-sheet** animation, and particle bursts. `import gamekit` adds gravity, solid bodies, hitboxes, and character-grid **tilemaps** — with a `plaintext edit_tilemap` painter to lay out levels visually. Sound effects and streamed music (volume / pitch / pan / fade) included.
 - **Real desktop UIs.** `window { column { button … text_field … } }` with scroll areas, lists, dropdowns, checkboxes, sliders, and multiline text — bound straight to your variables.
 - **Batteries included.** Math, lists (map/filter/fold-style tools), dictionaries, text, files, time, timers, console input, and `save` / `load` for structured progress that survives restarts.
-- **Train a neural network.** `import ai`, then `neural_network(...)`, `.train(...)`, `.predict(...)` — even watch it learn live in a game window, or train on a GPU (`device: auto`, covering NVIDIA / AMD / Apple).
+- **Train a neural network.** `import ai`, then `neural_network(...)`, `.train(...)`, `.predict(...)` — even watch it learn live in a game window, or train on a GPU (`device: auto`, covering NVIDIA / AMD / Apple). Load training data from a `.csv` with `load_dataset(...)`, or from a folder of labeled images with `load_image_dataset(...)`.
 - **Ship a single app.** `plaintext build game.pt` bundles your program into a standalone executable (Windows, macOS, or Linux).
 - **No memory management.** Garbage collected — you never think about it.
 
@@ -127,6 +127,7 @@ See **[`examples/README.md`](examples/README.md)** for the full index. Highlight
 | [`examples/fetch.pt`](examples/fetch.pt) | `import web` (offline JSON) |
 | [`examples/learn.pt`](examples/learn.pt) | `import ai` — train, GPU, save/load |
 | [`examples/dataset.pt`](examples/dataset.pt) | Train from CSV + accuracy |
+| [`examples/image_dataset.pt`](examples/image_dataset.pt) | Train from a folder of labeled images |
 | [`examples/evolve.pt`](examples/evolve.pt) | Neuroevolution in a game window |
 
 ## Learn the language
@@ -168,10 +169,21 @@ cargo install --path . # install `plaintext` onto your PATH
 ```
 
 Build a distributable Windows zip with `scripts\package-release.ps1`. Tagged releases
-(`v2.11.4`, …) are built for **Windows + macOS (arm64 & Intel) + Linux** by GitHub Actions
+(`v2.12.1`, …) are built for **Windows + macOS (arm64 & Intel) + Linux**, VS Code extension
+included in every zip, by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 ## What's new
+
+**2.12.1** — confirmed and documented `rgb: true` on `read_image` / `load_image_dataset`: pass it
+to keep all three color channels (`width * height * 3` numbers) instead of collapsing to
+grayscale, for tasks where color itself is the signal.
+
+**2.12.0** — neural networks can now train on images, not just CSVs: `read_image(path, width:,
+height:, rgb:)` decodes a PNG/JPG/BMP/… into a flat `0..1` pixel vector, and
+`load_image_dataset(folder, width:, height:)` turns a folder of labeled images (one subfolder per
+class) straight into `[examples, answers]`, one-hot encoded. See
+[`examples/image_dataset.pt`](examples/image_dataset.pt).
 
 **2.11.4** — `world.remove(body_or_hitbox)` takes something back out of the physics world (spawn
 several enemies in a list, remove each when it dies). See [`examples/enemies.pt`](examples/enemies.pt).
